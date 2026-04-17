@@ -1,0 +1,61 @@
+{
+  "name": "dota2-tracker",
+  "version": "2.5.1",
+  "description": "Dota 2 Tracker — live in-game stats overlay via GSI + player scouting (OpenDota) + AI coach",
+  "main": "electron/main.js",
+  "author": "CrabotY",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "gsi": "node gsi-server/server.js",
+    "mock": "node scripts/mock-gsi.js",
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
+  },
+  "build": {
+    "appId": "fun.crabot.dota2tracker",
+    "productName": "Dota 2 Tracker",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "gsi-server/**/*",
+      "lib/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      "gamestate_integration_dota2tracker.cfg"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Dota-2-Tracker-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "CrabotY",
+      "repo": "dota2-tracker",
+      "releaseType": "release"
+    }
+  },
+  "dependencies": {
+    "randomhexx": "^5.1.0",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "electron-updater": "^6.2.1",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
+  }
+}

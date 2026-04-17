@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dota 2 Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Draggable overlay title bar -->
+  <header class="titlebar">
+    <div class="title-left">
+      <span class="logo">DOTA<span class="logo-2">2</span></span>
+      <span id="conn" class="conn conn--off"><span class="dot"></span><span id="conn-text">…</span></span>
+    </div>
+    <div class="title-btns">
+      <button class="tb" id="btn-settings" title="Настройки (Alt+S)">⚙</button>
+      <button class="tb" id="btn-logs" title="Логи (Alt+L)">▤</button>
+      <button class="tb" id="btn-min" title="Свернуть">—</button>
+      <button class="tb tb-close" id="btn-close" title="Скрыть (Alt+D)">✕</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab tab--active" data-tab="match">Матч</button>
+    <button class="tab" data-tab="scout">Разведка</button>
+    <button class="tab" data-tab="ai">AI</button>
+  </nav>
+
+  <!-- ───────── LIVE MATCH TAB ───────── -->
+  <main id="tab-match" class="tabpane">
+    <section id="waiting" class="waiting">
+      <div class="wait-title">Ожидание Dota 2…</div>
+      <div id="wait-status" class="wait-status"></div>
+      <div class="wait-sub" id="wait-sub">Зайди в матч, бот-игру или демо героя.</div>
+      <div class="wait-tip">
+        <b>Уже в игре, а тут пусто?</b><br>
+        Dota читает GSI-конфиг только при своём запуске. Если это первый запуск трекера
+        при уже открытой Dota — <b>перезапусти Dota один раз</b>. Дальше трекер можно
+        открывать прямо посреди матча, данные подхватятся сами.<br>
+        <span class="muted">Совет: оставь автозапуск с Windows включённым (в настройках ⚙) — тогда перезаходы не нужны вовсе.</span>
+      </div>
+    </section>
+
+    <div id="live" class="hidden">
+      <!-- Scoreboard -->
+      <section class="scoreboard">
+        <div class="team team--radiant"><span class="tn">RAD</span><span id="radiant-score" class="ts">0</span></div>
+        <div class="clock-block">
+          <div id="clock" class="clock">0:00</div>
+          <div id="game-state" class="game-state">—</div>
+          <div id="daytime" class="daytime">☀</div>
+        </div>
+        <div class="team team--dire"><span id="dire-score" class="ts">0</span><span class="tn">DIRE</span></div>
+      </section>
+
+      <!-- Minimap -->
+      <section class="card">
+        <div class="card-title">Карта
+          <span class="mm-legend"><i class="mm-dot mm-me"></i>ты <i class="mm-dot mm-ally"></i>союз <i class="mm-dot mm-enemy"></i>враг</span>
+        </div>
+        <div id="minimap" class="minimap"><div id="mm-empty" class="mm-empty">нет данных карты</div></div>
+      </section>
+
+      <!-- Hero (HP/mana/level intentionally not displayed; still sent to the AI) -->
+      <section class="card">
+        <div class="hero-head"><span id="hero-name" class="hero-name">—</span></div>
+        <div id="hero-status" class="status-row"></div>
+        <div id="respawn" class="respawn hidden">Респаун <span id="respawn-sec">0</span>с</div>
+      </section>
+
+      <!-- Player stats -->
+      <section class="card">
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-val" id="kda">0/0/0</span><span class="stat-label">K/D/A</span></div>
+          <div class="stat"><span class="stat-val" id="kda-ratio">0.0</span><span class="stat-label">KDA</span></div>
+          <div class="stat"><span class="stat-val" id="cs">0</span><span class="stat-label">LH</span></div>
+          <div class="stat"><span class="stat-val" id="denies">0</span><span class="stat-label">DN</span></div>
+          <div class="stat"><span class="stat-val" id="gpm">0</span><span class="stat-label">GPM</span></div>
+          <div class="stat"><span class="stat-val" id="xpm">0</span><span class="stat-label">XPM</span></div>
+          <div class="stat stat--gold"><span class="stat-val" id="gold">0</span><span class="stat-label">Gold</span></div>
+          <div class="stat stat--gold"><span class="stat-val" id="networth">0</span><span class="stat-label">Net Worth</span></div>
+        </div>
+        <div class="extra-stats"><span>Hero DMG <b id="hero-dmg">0</b></span><span>Tower DMG <b id="tower-dmg">0</b></span></div>
+      </section>
+
+      <!-- Items -->
+      <section class="card">
+        <div class="card-title">Предметы</div>
+        <div id="items" class="items-grid"></div>
+        <div class="neutral-row">Нейтрал: <span id="neutral-item" class="neutral-item">—</span></div>
+      </section>
+
+      <!-- Abilities -->
+      <section class="card">
+        <div class="card-title">Способности</div>
+        <div id="abilities" class="abilities-row"></div>
+      </section>
+
+      <!-- Towers -->
+      <section class="card">
+        <div class="card-title">Башни T1</div>
+        <div class="buildings">
+          <div><div class="b-team b-team--radiant">Radiant</div><div id="radiant-buildings" class="b-list"></div></div>
+          <div><div class="b-team b-team--dire">Dire</div><div id="dire-buildings" class="b-list"></div></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ───────── SCOUTING TAB ───────── -->
+  <main id="tab-scout" class="tabpane hidden">
+    <section class="card">
+      <div class="card-title">Твой профиль <span class="auto-badge">авто</span></div>
+      <div id="me-result" class="scout-result"><div class="muted">Определяю аккаунт…</div></div>
+    </section>
+    <section class="card">
+      <div class="card-title">Найти игрока (OpenDota)</div>
+      <div class="search-row">
+        <input id="scout-input" class="scout-input" placeholder="Ник или Account/Steam ID" />
+        <button id="scout-go" class="scout-go">Найти</button>
+      </div>
+      <div id="scout-result" class="scout-result"></div>
+    </section>
+  </main>
+
+  <!-- ───────── AI CHAT TAB ───────── -->
+  <main id="tab-ai" class="tabpane tab-ai hidden">
+    <div class="ai-head">
+      <span id="ai-prov" class="ai-prov">—</span>
+      <select id="ai-mode" class="ai-mode" title="Режим игры — влияет на тайминги в советах">
+        <option value="normal">Обычный</option>
+        <option value="turbo">Турбо</option>
+      </select>
+      <button id="ai-clear" class="ai-clear" title="Очистить историю">Очистить</button>
+    </div>
+    <div id="ai-chat" class="ai-chat">
+      <div class="ai-empty">Спроси что угодно по текущему матчу — ассистент видит минуту игры,
+        твои статы, предметы и пики. Помнит историю диалога.</div>
+    </div>
+    <div class="ai-chips" id="ai-chips">
+      <button class="ai-chip" data-q="Идёт выбор героев. Кого мне запикать — контрпик против их состава и синергия с моей командой? Предложи 2-3 героя.">Кого пикнуть?</button>
+      <button class="ai-chip" data-q="Что мне купить следующим предметом и почему?">Что купить?</button>
+      <button class="ai-chip" data-q="Как мне сейчас играть — фармить, пушить или драться?">Как играть?</button>
+      <button class="ai-chip" data-q="Кого из вражеской команды мне нужно контрить и чем?">Кого контрить?</button>
+    </div>
+    <div class="ai-ask">
+      <input id="ai-input" class="ai-input" placeholder="Напр.: против Хускара что купить?" />
+      <button id="ai-send" class="ai-send">▶</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
