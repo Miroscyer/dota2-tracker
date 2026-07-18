@@ -158,10 +158,10 @@ function send(payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
   }, (res) => { res.resume(); });
-  req.on('error', (e) => console.error('Mock send failed:', e.message));
+  req.on('error', (e) => console.error('Mock 发送失败:', e.message));
   req.write(data);
   req.end();
 }
 
-console.log(`Mock GSI → http://localhost:${PORT}${GSI_PATH}  (Ctrl+C to stop)`);
+console.log(`Mock GSI → http://localhost:${PORT}${GSI_PATH}  (按 Ctrl+C 停止)`);
 setInterval(() => send(buildPayload()), TICK_MS);

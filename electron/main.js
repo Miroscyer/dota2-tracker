@@ -28,7 +28,7 @@ const startedHidden = process.argv.includes('--hidden');
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.quit();
 
-// ─── Настройки (settings.json в userData) ─────────────────────────────────────
+// ─── 设置 (settings.json 在 userData 中) ─────────────────────────────────────
 function settingsFile() { return path.join(app.getPath('userData'), 'settings.json'); }
 function loadSettings() {
   try { return JSON.parse(require('fs').readFileSync(settingsFile(), 'utf8')); }
@@ -38,16 +38,15 @@ function saveSettings(s) {
   try { require('fs').writeFileSync(settingsFile(), JSON.stringify(s, null, 2)); } catch {}
 }
 
-// ─── Автозапуск с Windows (скрыто в трей) ─────────────────────────────────────
-// Так конфиг всегда установлен и сервер готов ещё до запуска Dota — перезаход
-// игры больше не нужен.
+// ─── Windows 开机自启动 (隐藏到托盘) ─────────────────────────────────────
+// 这样配置始终已安装且服务器在 Dota 启动前就已就绪 — 无需重启游戏。
 function applyAutoLaunch(enabled) {
   if (isDev) return;
   try { app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true, args: ['--hidden'] }); }
   catch (e) { pushLog('error', `autoLaunch: ${e.message}`); }
 }
 
-// ─── Запущена ли Dota прямо сейчас ────────────────────────────────────────────
+// ─── 检查 Dota 是否正在运行 ────────────────────────────────────────────
 function isDotaRunning() {
   try {
     const { execSync } = require('child_process');
@@ -59,10 +58,10 @@ function isDotaRunning() {
   } catch { return false; }
 }
 
-// ─── Лог-буфер ───────────────────────────────────────────────────────────────
+// ─── 日志缓冲区 ───────────────────────────────────────────────────────
 const logBuffer = [];
 function pushLog(level, text) {
-  const entry = { level, text, time: new Date().toLocaleTimeString('ru-RU') };
+  const entry = { level, text, time: new Date().toLocaleTimeString('zh-CN') };
   logBuffer.push(entry);
   if (logBuffer.length > 500) logBuffer.shift();
   logsWindow?.webContents?.send('log', entry);
@@ -73,7 +72,7 @@ const _err = console.error.bind(console);
 console.log   = (...a) => { _log(...a);  pushLog('info',  a.join(' ')); };
 console.error = (...a) => { _err(...a);  pushLog('error', a.join(' ')); };
 
-// ─── Авто-установка GSI конфига (из нашего трекера) ───────────────────────────
+// ─── 自动安装 GSI 配置 (来自我们的追踪器) ───────────────────────────
 function installGsiConfig() {
   const cfgPath = isDev
     ? path.join(__dirname, '..', CFG_NAME)
@@ -81,71 +80,71 @@ function installGsiConfig() {
   try {
     const res = installConfig(cfgPath, CFG_NAME);
     if (res.ok) {
-      pushLog('info', `✓ GSI конфиг установлен: ${res.dest}`);
+      pushLog('info', `✓ GSI 配置已安装: ${res.dest}`);
       if (isDotaRunning()) {
-        pushLog('warn', '⚠ Dota сейчас запущена — конфиг прочитается только при её следующем старте. ' +
-          'Перезапусти Dota ОДИН раз; дальше перезаходы не нужны.');
+        pushLog('warn', '⚠ Dota 正在运行 — 配置将在下次启动时生效。' +
+          '请重启 Dota 一次；之后不再需要重启。');
       } else {
-        pushLog('info', '✓ Готово. Dota не запущена — при следующем старте всё подхватится, перезаход не нужен.');
+        pushLog('info', '✓ 完成。Dota 未运行 — 下次启动时将自动加载，无需重启。');
       }
     } else if (res.reason === 'dota-not-found') {
-      pushLog('warn', '⚠ Dota 2 не найдена автоматически — скопируй конфиг вручную:');
+      pushLog('warn', '⚠ 未自动找到 Dota 2 — 请手动复制配置文件:');
       pushLog('warn', `   ${cfgPath}`);
       pushLog('warn', '   → <Steam>\\steamapps\\common\\dota 2 beta\\game\\dota\\cfg\\gamestate_integration\\');
     } else {
-      pushLog('error', `Не удалось установить GSI конфиг: ${res.reason}`);
+      pushLog('error', `无法安装 GSI 配置: ${res.reason}`);
     }
   } catch (e) {
-    pushLog('error', `GSI конфиг: ${e.message}`);
+    pushLog('error', `GSI 配置错误: ${e.message}`);
   }
 }
 
-// ─── Автообновление ───────────────────────────────────────────────────────────
+// ─── 自动更新 ───────────────────────────────────────────────────────────
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
-    pushLog('info', '🔍 Проверяем обновления...');
+    pushLog('info', '🔍 正在检查更新...');
     settingsWindow?.webContents?.send('update-status', { status: 'checking' });
     mainWindow?.webContents?.send('update-status',     { status: 'checking' });
   });
   autoUpdater.on('update-available', info => {
-    pushLog('info', `⬆ Доступно обновление: v${info.version}`);
+    pushLog('info', `⬆ 发现新版本: v${info.version}`);
     const payload = { status: 'available', version: info.version, notes: info.releaseNotes };
     settingsWindow?.webContents?.send('update-status', payload);
     mainWindow?.webContents?.send('update-status',     payload);
   });
   autoUpdater.on('update-not-available', () => {
-    pushLog('info', '✓ Установлена последняя версия');
+    pushLog('info', '✓ 已是最新版本');
     const payload = { status: 'latest', version: app.getVersion() };
     settingsWindow?.webContents?.send('update-status', payload);
     mainWindow?.webContents?.send('update-status',     payload);
   });
   autoUpdater.on('download-progress', prog => {
     const p = Math.round(prog.percent);
-    pushLog('info', `⬇ Загрузка обновления: ${p}%`);
+    pushLog('info', `⬇ 下载更新: ${p}%`);
     const payload = { status: 'downloading', percent: p, speed: Math.round(prog.bytesPerSecond / 1024) };
     settingsWindow?.webContents?.send('update-status', payload);
     mainWindow?.webContents?.send('update-status',     payload);
   });
   autoUpdater.on('update-downloaded', info => {
-    pushLog('info', `✅ Обновление v${info.version} загружено — готово к установке`);
+    pushLog('info', `✅ 更新 v${info.version} 已下载 — 准备安装`);
     const payload = { status: 'downloaded', version: info.version };
     settingsWindow?.webContents?.send('update-status', payload);
     mainWindow?.webContents?.send('update-status',     payload);
   });
   autoUpdater.on('error', err => {
-    pushLog('error', `Ошибка обновления: ${err.message}`);
+    pushLog('error', `更新错误: ${err.message}`);
     settingsWindow?.webContents?.send('update-status', { status: 'error', message: err.message });
   });
 
   if (!isDev) setTimeout(() => autoUpdater.checkForUpdates(), 5000);
 }
 
-// ─── GSI сервер ───────────────────────────────────────────────────────────────
+// ─── GSI 服务器 ───────────────────────────────────────────────────────
 function startGSIServer() {
-  pushLog('info', '▶ Запуск GSI сервера...');
+  pushLog('info', '▶ 启动 GSI 服务器...');
   const serverPath = isDev
     ? path.join(__dirname, '../gsi-server/server.js')
     : path.join(process.resourcesPath, 'app/gsi-server/server.js');
@@ -162,7 +161,7 @@ function startGSIServer() {
   gsiProcess.on('exit',  code => pushLog('warn',  `GSI exited (${code})`));
 }
 
-// ─── Главное окно (оверлей) ───────────────────────────────────────────────────
+// ─── 主窗口 (覆盖层) ───────────────────────────────────────────────────
 function createWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   mainWindow = new BrowserWindow({
@@ -184,15 +183,15 @@ function createWindow() {
   else       mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
 
   mainWindow.on('closed', () => { mainWindow = null; });
-  pushLog('info', '✓ Главное окно создано');
+  pushLog('info', '✓ 主窗口已创建');
 }
 
-// ─── Окно настроек ────────────────────────────────────────────────────────────
+// ─── 设置窗口 ────────────────────────────────────────────────────────────
 function createSettingsWindow() {
   if (settingsWindow) { settingsWindow.focus(); return; }
   settingsWindow = new BrowserWindow({
     width: 520, height: 600,
-    title: 'Dota 2 Tracker — Настройки',
+    title: 'Dota 2 Tracker — 设置',
     backgroundColor: '#0a0c12', frame: true, resizable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -207,7 +206,7 @@ function createSettingsWindow() {
 }
 
 function buildSettingsHTML() {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Настройки</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>设置</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0a0c12;color:#c8d0e0;font-family:'Segoe UI',sans-serif;font-size:13px}
@@ -236,77 +235,77 @@ body{background:#0a0c12;color:#c8d0e0;font-family:'Segoe UI',sans-serif;font-siz
 .divider{height:1px;background:#1e2535;margin:8px 0}
 code{background:#1e2535;padding:2px 6px;border-radius:3px;color:#c8d0e0}
 </style></head><body>
-<div class="header"><h1>⚙ НАСТРОЙКИ</h1><p id="ver-line">Dota 2 Tracker v—</p></div>
+<div class="header"><h1>⚙ 设置</h1><p id="ver-line">Dota 2 Tracker v—</p></div>
 <div class="body">
-  <div class="section"><div class="section-title">Обновления</div>
+  <div class="section"><div class="section-title">更新</div>
     <div class="card">
-      <div class="card-row"><div><div class="card-label">Версия приложения</div>
-        <div class="card-sub">Текущая: <span id="cur-ver">—</span> · Последняя: <span id="latest-ver">—</span></div></div>
+      <div class="card-row"><div><div class="card-label">应用版本</div>
+        <div class="card-sub">当前: <span id="cur-ver">—</span> · 最新: <span id="latest-ver">—</span></div></div>
         <span id="update-tag" class="tag tag-gray">—</span></div>
       <div class="divider"></div>
-      <div class="card-row" style="margin-top:4px"><div id="update-msg" style="font-size:12px;color:#7a8299">Нажми для проверки</div>
+      <div class="card-row" style="margin-top:4px"><div id="update-msg" style="font-size:12px;color:#7a8299">点击检查更新</div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost" id="check-btn" onclick="checkUpdates()">Проверить</button>
-          <button class="btn btn-primary" id="download-btn" style="display:none" onclick="downloadUpdate()">Скачать</button>
-          <button class="btn btn-green" id="install-btn" style="display:none" onclick="installUpdate()">Установить</button></div></div>
+          <button class="btn btn-ghost" id="check-btn" onclick="checkUpdates()">检查</button>
+          <button class="btn btn-primary" id="download-btn" style="display:none" onclick="downloadUpdate()">下载</button>
+          <button class="btn btn-green" id="install-btn" style="display:none" onclick="installUpdate()">安装</button></div></div>
       <div class="progress-wrap" id="progress-wrap"><div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
         <div class="progress-text" id="progress-text">0 KB/s</div></div>
       <div class="notes" id="release-notes"></div></div>
   </div>
-  <div class="section"><div class="section-title">Ключи API (опционально)</div>
+  <div class="section"><div class="section-title">API 密钥（可选）</div>
     <div class="card" style="background:rgba(74,222,128,.06);border-color:rgba(74,222,128,.2)">
-      <div class="card-label">✓ Твой Steam-аккаунт определяется автоматически</div>
-      <div class="card-sub">Из локального логина Steam и из данных матча (GSI) — вводить ничего не нужно.</div></div>
-    <div class="card"><div class="card-label" style="margin-bottom:4px">Steam Web API Key — опционально</div>
-      <div class="card-sub" style="margin-bottom:8px">Только для полной таблицы матча через Valve. Сам ключ Valve не отдаёт локально — его нужно один раз скопировать со страницы. Без него всё работает (OpenDota + GSI).</div>
+      <div class="card-label">✓ 你的 Steam 账号已自动识别</div>
+      <div class="card-sub">从本地 Steam 登录和比赛数据 (GSI) 获取 — 无需手动输入。</div></div>
+    <div class="card"><div class="card-label" style="margin-bottom:4px">Steam Web API Key — 可选</div>
+      <div class="card-sub" style="margin-bottom:8px">仅用于通过 Valve 获取完整比赛数据表。密钥需要从网页一次性复制。没有它一切正常 (OpenDota + GSI)。</div>
       <input class="input" type="password" id="steam-key" placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
       <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
-        <a class="link" onclick="openExternal('https://steamcommunity.com/dev/apikey');return false">Получить ключ →</a>
-        <button class="btn btn-ghost" onclick="saveKey('STEAM_API_KEY','steam-key')">Сохранить</button></div></div>
+        <a class="link" onclick="openExternal('https://steamcommunity.com/dev/apikey');return false">获取密钥 →</a>
+        <button class="btn btn-ghost" onclick="saveKey('STEAM_API_KEY','steam-key')">保存</button></div></div>
   </div>
-  <div class="section"><div class="section-title">AI-ассистент</div>
+  <div class="section"><div class="section-title">AI 助手</div>
     <div class="card">
-      <div class="card-label" style="margin-bottom:8px">Провайдер нейросети</div>
+      <div class="card-label" style="margin-bottom:8px">AI 提供商</div>
       <select class="input" id="ai-provider" onchange="setProvider(this.value)">
         <option value="openai">ChatGPT (OpenAI)</option>
         <option value="gemini">Google Gemini</option>
         <option value="deepseek">DeepSeek</option>
       </select>
-      <div class="card-sub" style="margin-top:6px">Каждый вводит свой ключ. Ключи хранятся только на твоём ПК (userData\\.env) и не попадают в репозиторий/релиз.</div>
+      <div class="card-sub" style="margin-top:6px">每个提供商需要各自的密钥。密钥仅存储在本机 (userData/.env)，不会进入仓库/发布版。</div>
     </div>
     <div class="card"><div class="card-label" style="margin-bottom:6px">OpenAI API Key (ChatGPT)</div>
       <input class="input" type="password" id="openai-key" placeholder="sk-...">
       <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
-        <a class="link" onclick="openExternal('https://platform.openai.com/api-keys');return false">Получить ключ →</a>
-        <button class="btn btn-ghost" onclick="saveKey('OPENAI_API_KEY','openai-key')">Сохранить</button></div></div>
+        <a class="link" onclick="openExternal('https://platform.openai.com/api-keys');return false">获取密钥 →</a>
+        <button class="btn btn-ghost" onclick="saveKey('OPENAI_API_KEY','openai-key')">保存</button></div></div>
     <div class="card"><div class="card-label" style="margin-bottom:6px">Google Gemini API Key</div>
       <input class="input" type="password" id="gemini-key" placeholder="AIza...">
       <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
-        <a class="link" onclick="openExternal('https://aistudio.google.com/app/apikey');return false">Получить ключ →</a>
-        <button class="btn btn-ghost" onclick="saveKey('GEMINI_API_KEY','gemini-key')">Сохранить</button></div></div>
+        <a class="link" onclick="openExternal('https://aistudio.google.com/app/apikey');return false">获取密钥 →</a>
+        <button class="btn btn-ghost" onclick="saveKey('GEMINI_API_KEY','gemini-key')">保存</button></div></div>
     <div class="card"><div class="card-label" style="margin-bottom:6px">DeepSeek API Key</div>
       <input class="input" type="password" id="deepseek-key" placeholder="sk-...">
       <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
-        <a class="link" onclick="openExternal('https://platform.deepseek.com/api_keys');return false">Получить ключ →</a>
-        <button class="btn btn-ghost" onclick="saveKey('DEEPSEEK_API_KEY','deepseek-key')">Сохранить</button></div></div>
+        <a class="link" onclick="openExternal('https://platform.deepseek.com/api_keys');return false">获取密钥 →</a>
+        <button class="btn btn-ghost" onclick="saveKey('DEEPSEEK_API_KEY','deepseek-key')">保存</button></div></div>
   </div>
-  <div class="section"><div class="section-title">Оверлей</div>
-    <div class="card"><div class="card-row"><div><div class="card-label">Автозапуск с Windows</div>
-      <div class="card-sub">Трекер тихо стартует в трее при входе — конфиг всегда на месте, перезаход Dota не нужен.</div></div>
+  <div class="section"><div class="section-title">覆盖层</div>
+    <div class="card"><div class="card-row"><div><div class="card-label">Windows 开机自启动</div>
+      <div class="card-sub">追踪器在登录时静默启动到托盘 — 配置始终就位，无需重启 Dota。</div></div>
       <label style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;color:#7a8299">
-        <input type="checkbox" id="auto-launch" checked onchange="toggleAutoLaunch(this.checked)"> Вкл</label></div></div>
-    <div class="card"><div class="card-row"><div><div class="card-label">Прозрачность</div>
+        <input type="checkbox" id="auto-launch" checked onchange="toggleAutoLaunch(this.checked)"> 开启</label></div></div>
+    <div class="card"><div class="card-row"><div><div class="card-label">透明度</div>
       <div class="card-sub" id="opacity-val">100%</div></div>
       <input type="range" min="30" max="100" value="100" id="opacity-slider" style="width:120px" oninput="updateOpacity(this.value)"></div></div>
-    <div class="card"><div class="card-label">Горячие клавиши</div>
+    <div class="card"><div class="card-label">快捷键</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:11px;color:#7a8299">
-        <div><code>Alt+D</code> Показать/скрыть</div><div><code>Alt+L</code> Логи</div>
-        <div><code>Alt+S</code> Настройки</div><div><code>Alt+Shift+D</code> Сбросить позицию</div></div></div>
+        <div><code>Alt+D</code> 显示/隐藏</div><div><code>Alt+L</code> 日志</div>
+        <div><code>Alt+S</code> 设置</div><div><code>Alt+Shift+D</code> 重置位置</div></div></div>
   </div>
-  <div class="section"><div class="section-title">О приложении</div>
+  <div class="section"><div class="section-title">关于</div>
     <div class="card" style="font-size:11px;color:#4a5168;line-height:2">
       <div>Dota 2 Tracker · <a class="link" onclick="openExternal('https://github.com/CrabotY/dota2-tracker');return false">CrabotY/dota2-tracker</a></div>
-      <div>Live: Valve Game State Integration · Профили: OpenDota</div></div>
+      <div>实时数据: Valve Game State Integration · 玩家资料: OpenDota</div></div>
   </div>
 </div>
 <script>
@@ -315,29 +314,29 @@ api?.onAppVersion(v => { document.getElementById('cur-ver').textContent='v'+v; d
 api?.onUpdateStatus(info => {
   const $=id=>document.getElementById(id);
   const tag=$('update-tag'),msg=$('update-msg'),dl=$('download-btn'),inst=$('install-btn'),chk=$('check-btn'),pw=$('progress-wrap'),pf=$('progress-fill'),pt=$('progress-text'),nt=$('release-notes');
-  if(info.status==='checking'){tag.className='tag tag-gray';tag.textContent='Проверяем...';msg.textContent='Подключаемся к GitHub...';chk.disabled=true;}
-  else if(info.status==='available'){tag.className='tag tag-blue';tag.textContent='Есть обновление';$('latest-ver').textContent='v'+info.version;msg.textContent='Доступна версия v'+info.version;dl.style.display='inline-block';chk.disabled=false;if(info.notes){nt.style.display='block';nt.textContent=typeof info.notes==='string'?info.notes.replace(/<[^>]+>/g,''):JSON.stringify(info.notes);}}
-  else if(info.status==='latest'){tag.className='tag tag-green';tag.textContent='Актуально';$('latest-ver').textContent='v'+info.version;msg.textContent='Установлена последняя версия';chk.disabled=false;dl.style.display='none';}
-  else if(info.status==='downloading'){tag.className='tag tag-blue';tag.textContent='Загрузка...';pw.style.display='block';pf.style.width=info.percent+'%';pt.textContent=info.percent+'% · '+info.speed+' KB/s';dl.disabled=true;}
-  else if(info.status==='downloaded'){tag.className='tag tag-green';tag.textContent='Готово к установке';pw.style.display='none';dl.style.display='none';inst.style.display='inline-block';msg.textContent='Обновление загружено. Установить сейчас?';}
-  else if(info.status==='error'){tag.className='tag tag-red';tag.textContent='Ошибка';msg.textContent=info.message||'Ошибка обновления';chk.disabled=false;dl.disabled=false;}
+  if(info.status==='checking'){tag.className='tag tag-gray';tag.textContent='检查中...';msg.textContent='连接到 GitHub...';chk.disabled=true;}
+  else if(info.status==='available'){tag.className='tag tag-blue';tag.textContent='有更新';$('latest-ver').textContent='v'+info.version;msg.textContent='发现新版本 v'+info.version;dl.style.display='inline-block';chk.disabled=false;if(info.notes){nt.style.display='block';nt.textContent=typeof info.notes==='string'?info.notes.replace(/<[^>]+>/g,''):JSON.stringify(info.notes);}}
+  else if(info.status==='latest'){tag.className='tag tag-green';tag.textContent='已是最新';$('latest-ver').textContent='v'+info.version;msg.textContent='已是最新版本';chk.disabled=false;dl.style.display='none';}
+  else if(info.status==='downloading'){tag.className='tag tag-blue';tag.textContent='下载中...';pw.style.display='block';pf.style.width=info.percent+'%';pt.textContent=info.percent+'% · '+info.speed+' KB/s';dl.disabled=true;}
+  else if(info.status==='downloaded'){tag.className='tag tag-green';tag.textContent='准备安装';pw.style.display='none';dl.style.display='none';inst.style.display='inline-block';msg.textContent='更新已下载。立即安装？';}
+  else if(info.status==='error'){tag.className='tag tag-red';tag.textContent='错误';msg.textContent=info.message||'更新错误';chk.disabled=false;dl.disabled=false;}
 });
 function checkUpdates(){api?.checkForUpdates();} function downloadUpdate(){api?.downloadUpdate();} function installUpdate(){api?.installUpdate();}
 function openExternal(u){api?.openExternal(u);}
 function updateOpacity(v){document.getElementById('opacity-val').textContent=v+'%';api?.setOpacity(v/100);}
 function toggleAutoLaunch(on){api?.setAutoLaunch(on);}
 api?.getSettings?.().then(s=>{ if(s&&typeof s.autoLaunch==='boolean') document.getElementById('auto-launch').checked=s.autoLaunch; });
-function saveKey(name,id){const v=document.getElementById(id).value.trim();if(!v)return;api?.saveEnvKey(name,v);alert('Сохранено ✓');}
+function saveKey(name,id){const v=document.getElementById(id).value.trim();if(!v)return;api?.saveEnvKey(name,v);alert('已保存 ✓');}
 function setProvider(v){api?.saveEnvKey('AI_PROVIDER',v);}
 fetch('http://localhost:3001/ai/info').then(r=>r.json()).then(i=>{if(i&&i.provider)document.getElementById('ai-provider').value=i.provider;}).catch(()=>{});
 </script></body></html>`;
 }
 
-// ─── Окно логов ───────────────────────────────────────────────────────────────
+// ─── 日志窗口 ───────────────────────────────────────────────────────────
 function createLogsWindow() {
   if (logsWindow) { logsWindow.focus(); return; }
   logsWindow = new BrowserWindow({
-    width: 700, height: 500, title: 'Dota 2 Tracker — Логи',
+    width: 700, height: 500,     title: 'Dota 2 Tracker — 日志',
     backgroundColor: '#0a0c12',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
@@ -362,36 +361,36 @@ body{background:#0a0c12;color:#c8d0e0;font-family:Consolas,monospace;font-size:1
 .line.error .msg{color:#f87171}.line.warn .msg{color:#facc15}.line.info .msg{color:#c8d0e0}
 #status{padding:4px 12px;font-size:11px;color:#3d4f6b;background:#111520;border-top:1px solid #1e2535}
 </style></head><body>
-<div id="toolbar"><span>📋 ЛОГИ</span><input id="filter" placeholder="Фильтр...">
-<button class="tbtn" onclick="clearLogs()">Очистить</button><button class="tbtn" onclick="copyAll()">Копировать</button>
-<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#7a8299"><input type="checkbox" id="as" checked> Автоскролл</label></div>
-<div id="logs"></div><div id="status">0 строк</div>
+<div id="toolbar"><span>📋 日志</span><input id="filter" placeholder="过滤...">
+<button class="tbtn" onclick="clearLogs()">清空</button><button class="tbtn" onclick="copyAll()">复制</button>
+<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#7a8299"><input type="checkbox" id="as" checked> 自动滚动</label></div>
+<div id="logs"></div><div id="status">0 条</div>
 <script>
 const el=document.getElementById('logs'),fi=document.getElementById('filter'),st=document.getElementById('status');let all=[],ft='';
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function cls(e){return e.level==='error'?'error':e.level==='warn'?'warn':'info'}
 function mk(e){const d=document.createElement('div');d.className='line '+cls(e);d.innerHTML='<span class="time">'+e.time+'</span><span class="msg">'+esc(e.text)+'</span>';return d}
-function add(e){all.push(e);if(ft&&!e.text.toLowerCase().includes(ft))return;el.appendChild(mk(e));st.textContent=all.length+' строк';if(document.getElementById('as').checked)el.scrollTop=el.scrollHeight}
+function add(e){all.push(e);if(ft&&!e.text.toLowerCase().includes(ft))return;el.appendChild(mk(e));st.textContent=all.length+' 条';if(document.getElementById('as').checked)el.scrollTop=el.scrollHeight}
 function rr(){el.innerHTML='';all.filter(e=>!ft||e.text.toLowerCase().includes(ft)).forEach(e=>el.appendChild(mk(e)));if(document.getElementById('as').checked)el.scrollTop=el.scrollHeight}
-function clearLogs(){all=[];el.innerHTML='';st.textContent='0 строк'}
+function clearLogs(){all=[];el.innerHTML='';st.textContent='0 条'}
 function copyAll(){navigator.clipboard.writeText(all.map(e=>'['+e.time+'] '+e.text).join('\\n'))}
 fi.addEventListener('input',()=>{ft=fi.value.toLowerCase();rr()});
-if(window.electronAPI){window.electronAPI.onLog(e=>add(e));window.electronAPI.onLogHistory(es=>{all=es;rr();st.textContent=all.length+' строк'});}
+if(window.electronAPI){window.electronAPI.onLog(e=>add(e));window.electronAPI.onLogHistory(es=>{all=es;rr();st.textContent=all.length+' 条'});}
 </script></body></html>`;
 }
 
-// ─── Трей ─────────────────────────────────────────────────────────────────────
+// ─── 托盘 ─────────────────────────────────────────────────────────────
 function createTray() {
   tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip('Dota 2 Tracker');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Dota 2 Tracker', enabled: false },
     { type: 'separator' },
-    { label: 'Показать трекер', click: () => mainWindow?.show() },
-    { label: 'Настройки',       click: () => createSettingsWindow() },
-    { label: 'Логи',            click: () => createLogsWindow() },
+    { label: '显示追踪器', click: () => mainWindow?.show() },
+    { label: '设置',       click: () => createSettingsWindow() },
+    { label: '日志',            click: () => createLogsWindow() },
     { type: 'separator' },
-    { label: 'Выход',           click: () => app.quit() }
+    { label: '退出',           click: () => app.quit() }
   ]));
   tray.on('double-click', () => mainWindow?.show());
 }
@@ -405,7 +404,7 @@ ipcMain.on('set-always-on-top', (_, f) => mainWindow?.setAlwaysOnTop(f, 'screen-
 ipcMain.on('set-opacity',       (_, v) => mainWindow?.setOpacity(v));
 ipcMain.on('open-external',     (_, url) => shell.openExternal(url));
 ipcMain.on('check-for-updates', () => {
-  if (isDev) settingsWindow?.webContents?.send('update-status', { status: 'error', message: 'Недоступно в dev-режиме' });
+  if (isDev) settingsWindow?.webContents?.send('update-status', { status: 'error', message: '开发模式下不可用' });
   else autoUpdater.checkForUpdates();
 });
 ipcMain.on('download-update', () => autoUpdater.downloadUpdate());
@@ -416,7 +415,7 @@ ipcMain.handle('get-settings', () => loadSettings());
 ipcMain.on('set-auto-launch', (_, enabled) => {
   const s = loadSettings(); s.autoLaunch = !!enabled; saveSettings(s);
   applyAutoLaunch(!!enabled);
-  pushLog('info', `Автозапуск с Windows: ${enabled ? 'вкл' : 'выкл'}`);
+  pushLog('info', `Windows 开机自启动: ${enabled ? '开启' : '关闭'}`);
 });
 
 ipcMain.on('save-env-key', (_, name, value) => {
@@ -427,8 +426,8 @@ ipcMain.on('save-env-key', (_, name, value) => {
     const re = new RegExp(`^${name}=.*$`, 'm');
     content = re.test(content) ? content.replace(re, `${name}=${value}`) : (content + `\n${name}=${value}`);
     fs.writeFileSync(envPath, content.trim() + '\n');
-    pushLog('info', `${name} сохранён — перезапусти трекер`);
-  } catch (e) { pushLog('error', `Ошибка сохранения ключа: ${e.message}`); }
+    pushLog('info', `${name} 已保存 — 请重启追踪器`);
+  } catch (e) { pushLog('error', `保存密钥错误: ${e.message}`); }
 });
 
 // Second launch → just reveal the running overlay instead of starting a rival.
@@ -456,5 +455,5 @@ if (hasLock) app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => { globalShortcut.unregisterAll(); gsiProcess?.kill(); });
-app.on('window-all-closed', () => { /* остаёмся в трее */ });
+app.on('window-all-closed', () => { /* 保持在托盘中 */ });
 app.on('activate', () => { if (!mainWindow) createWindow(); });

@@ -44,16 +44,16 @@ function clockStr(s) {
   return `${neg ? '-' : ''}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
 }
 const GAME_STATE = {
-  DOTA_GAMERULES_STATE_HERO_SELECTION: 'Пик',
-  DOTA_GAMERULES_STATE_STRATEGY_TIME: 'Стратегия',
-  DOTA_GAMERULES_STATE_PRE_GAME: 'Пре-гейм',
-  DOTA_GAMERULES_STATE_GAME_IN_PROGRESS: 'Игра',
-  DOTA_GAMERULES_STATE_POST_GAME: 'Пост-гейм',
+  DOTA_GAMERULES_STATE_HERO_SELECTION: '选人',
+  DOTA_GAMERULES_STATE_STRATEGY_TIME: '策略',
+  DOTA_GAMERULES_STATE_PRE_GAME: '准备',
+  DOTA_GAMERULES_STATE_GAME_IN_PROGRESS: '游戏中',
+  DOTA_GAMERULES_STATE_POST_GAME: '结算',
 };
 const STATUS_FLAGS = [
-  ['stunned', 'Стан'], ['silenced', 'Сайленс'], ['hexed', 'Хекс'],
-  ['disarmed', 'Disarm'], ['muted', 'Mute'], ['break', 'Break'],
-  ['magicimmune', 'BKB'], ['smoked', 'Смок'], ['has_debuff', 'Дебафф'],
+  ['stunned', '眩晕'], ['silenced', '沉默'], ['hexed', '妖术'],
+  ['disarmed', '缴械'], ['muted', '禁言'], ['break', '破坏'],
+  ['magicimmune', 'BKB'], ['smoked', '诡计'], ['has_debuff', '减益'],
 ];
 
 let lastState = null;
@@ -115,7 +115,7 @@ const WORLD_MIN = -8200, WORLD_RANGE = 16400;
 function renderMinimap(minimap, myHeroName, myTeam) {
   const el = $('minimap');
   if (!minimap || typeof minimap !== 'object' || !Object.keys(minimap).length) {
-    el.innerHTML = '<div class="mm-empty">нет данных карты —<br>перезапусти Dota (нужен обновлённый GSI-конфиг)</div>';
+    el.innerHTML = '<div class="mm-empty">暂无小地图数据 —<br>请重启 Dota（需要更新的 GSI 配置）</div>';
     return;
   }
   const myTeamNum = myTeam === 'dire' ? 3 : 2; // radiant = 2, dire = 3
@@ -134,7 +134,7 @@ function renderMinimap(minimap, myHeroName, myTeam) {
     else cls = 'mm-dot mm-neutral';
     dots.push(`<i class="${cls}" style="left:${left}%;top:${top}%"></i>`);
   }
-  el.innerHTML = dots.length ? dots.join('') : '<div class="mm-empty">нет данных карты —<br>перезапусти Dota (нужен обновлённый GSI-конфиг)</div>';
+    el.innerHTML = dots.length ? dots.join('') : '<div class="mm-empty">暂无小地图数据 —<br>请重启 Dota（需要更新的 GSI 配置）</div>';
 }
 
 function renderItems(items) {
@@ -192,18 +192,18 @@ function renderBuildings(b) {
 function setConn(state) {
   const el = $('conn');
   el.className = 'conn conn--' + state;
-  $('conn-text').textContent = state === 'live' ? 'live' : state === 'server' ? 'жду Dota' : 'нет связи';
+  $('conn-text').textContent = state === 'live' ? 'live' : state === 'server' ? '等待 Dota' : '无连接';
   // Update the waiting screen's status line to match.
   const ws = $('wait-status'), sub = $('wait-sub');
   if (!ws) return;
   if (state === 'off') {
-    ws.textContent = '✕ Трекер-сервер недоступен';
+    ws.textContent = '✕ 追踪器服务器不可用';
     ws.className = 'wait-status ws-off';
-    if (sub) sub.textContent = 'Сервер не запущен или порт 3001 занят. Открой Логи (▤) — там причина.';
+    if (sub) sub.textContent = '服务器未启动或端口 3001 被占用。打开日志 (▤) 查看原因。';
   } else if (state === 'server') {
-    ws.textContent = '✓ Сервер работает · ждём данные от Dota';
+    ws.textContent = '✓ 服务器运行中 · 等待 Dota 数据';
     ws.className = 'wait-status ws-server';
-    if (sub) sub.textContent = 'Зайди в матч, бот-игру или демо героя.';
+    if (sub) sub.textContent = '进入比赛、机器人游戏或英雄试玩。';
   }
 }
 let ws;
@@ -242,7 +242,7 @@ function fmtMsg(s) {
 function renderChat() {
   const box = $('ai-chat');
   if (!aiHistory.length) {
-    box.innerHTML = '<div class="ai-empty">Спроси что угодно по текущему матчу — ассистент видит минуту игры, твои статы, предметы и пики. Помнит историю диалога.</div>';
+    box.innerHTML = '<div class="ai-empty">询问当前比赛的任何问题 — 助手可以看到游戏时间、你的数据、物品和选人。支持对话历史记忆。</div>';
     return;
   }
   box.innerHTML = aiHistory.map((m) =>
@@ -263,11 +263,11 @@ async function sendAI(question) {
     });
     const data = await r.json();
     aiBusy = false;
-    aiHistory.push({ role: 'assistant', content: r.ok ? (data.text || '—') : ('⚠ ' + (data.error || 'Ошибка запроса')) });
+    aiHistory.push({ role: 'assistant', content: r.ok ? (data.text || '—') : ('⚠ ' + (data.error || '请求错误')) });
     renderChat();
   } catch (e) {
     aiBusy = false;
-    aiHistory.push({ role: 'assistant', content: '⚠ Сервер недоступен: ' + e.message });
+    aiHistory.push({ role: 'assistant', content: '⚠ 服务器不可用: ' + e.message });
     renderChat();
   }
 }
@@ -275,7 +275,7 @@ async function sendAI(question) {
 async function refreshAiProvider() {
   try {
     const info = await (await fetch(`${API}/ai/info`)).json();
-    $('ai-prov').textContent = info.hasKey ? info.label : info.label + ' · нет ключа';
+    $('ai-prov').textContent = info.hasKey ? info.label : info.label + ' · 无密钥';
     $('ai-prov').className = 'ai-prov' + (info.hasKey ? ' ok' : ' nokey');
   } catch { $('ai-prov').textContent = '—'; }
 }
@@ -293,53 +293,53 @@ try {
 } catch {}
 
 // ── Scouting ─────────────────────────────────────────────────────────────────
-const MEDALS = ['Herald','Guardian','Crusader','Archon','Legend','Ancient','Divine','Immortal'];
+const MEDALS = ['先锋','卫士','中军','统帅','传奇','万古流芳','超凡入圣','冠绝一世'];
 function rankName(t) {
-  if (!t) return 'Без ранга';
+  if (!t) return '无段位';
   const medal = MEDALS[Math.floor(t / 10) - 1];
-  if (!medal) return 'Без ранга';
+  if (!medal) return '无段位';
   const stars = t % 10;
-  return `${medal}${stars ? ' ' + stars : ''}`;
+  return `${medal}${stars ? ' ' + stars + '星' : ''}`;
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function profileHTML(p) {
-  if (!p || p.error) return `<div class="muted">${esc(p?.error) || 'Профиль не найден'}</div>`;
+  if (!p || p.error) return `<div class="muted">${esc(p?.error) || '未找到档案'}</div>`;
   const wrCls = p.winrate == null ? '' : p.winrate >= 50 ? 'wr-good' : 'wr-bad';
   return `
     <div class="profile-card">
       ${p.avatar ? `<img src="${esc(p.avatar)}" alt="" />` : '<div class="profile-noavatar">🧍</div>'}
       <div class="profile-meta">
         <div class="profile-name">${esc(p.name) || '—'}</div>
-        <div class="profile-sub"><span class="rank-pill">${esc(rankName(p.rank))}</span> WR <span class="${wrCls}">${p.winrate ?? '—'}%</span> <span class="muted">(${p.totalGames || 0} игр)</span></div>
+        <div class="profile-sub"><span class="rank-pill">${esc(rankName(p.rank))}</span> 胜率 <span class="${wrCls}">${p.winrate ?? '—'}%</span> <span class="muted">(${p.totalGames || 0} 局)</span></div>
         ${p.avgKDA ? `<div class="profile-sub muted">Ø KDA ${p.avgKDA.k}/${p.avgKDA.d}/${p.avgKDA.a} · GPM ${p.avgGPM} · XPM ${p.avgXPM}</div>` : ''}
       </div>
     </div>
-    ${(p.topHeroes || []).length ? '<div class="mini-title">Топ герои</div>' + p.topHeroes.map((h) =>
-      `<div class="top-hero"><span>${esc(h.name)}</span><span class="muted">${h.games} игр · <b class="${h.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${h.winrate}%</b></span></div>`).join('') : ''}`;
+    ${(p.topHeroes || []).length ? '<div class="mini-title">常用英雄</div>' + p.topHeroes.map((h) =>
+      `<div class="top-hero"><span>${esc(h.name)}</span><span class="muted">${h.games} 局 · <b class="${h.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${h.winrate}%</b></span></div>`).join('') : ''}`;
 }
 
 async function loadMe() {
   const box = $('me-result');
   try {
     const r = await fetch(`${API}/me`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); box.innerHTML = `<div class="muted">${esc(e.error) || 'Аккаунт ещё не определён'}</div>`; return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); box.innerHTML = `<div class="muted">${esc(e.error) || '账号尚未识别'}</div>`; return; }
     box.innerHTML = profileHTML(await r.json());
-  } catch (e) { box.innerHTML = `<div class="muted">Сервер недоступен</div>`; }
+  } catch (e) { box.innerHTML = `<div class="muted">服务器不可用</div>`; }
 }
 
 async function scout(q) {
-  const box = $('scout-result'); box.innerHTML = '<div class="muted">Ищу…</div>';
+  const box = $('scout-result'); box.innerHTML = '<div class="muted">搜索中…</div>';
   try {
     let id = q.trim();
     if (!/^\d+$/.test(id)) {
       const sr = await (await fetch(`${API}/search?q=${encodeURIComponent(id)}`)).json();
-      if (!Array.isArray(sr) || !sr.length) { box.innerHTML = '<div class="muted">Не найдено</div>'; return; }
+      if (!Array.isArray(sr) || !sr.length) { box.innerHTML = '<div class="muted">未找到</div>'; return; }
       id = sr[0].account_id;
     }
     const p = await (await fetch(`${API}/profile/${id}`)).json();
     box.innerHTML = profileHTML(p);
-  } catch (e) { box.innerHTML = `<div class="muted">Ошибка: ${esc(e.message)}</div>`; }
+  } catch (e) { box.innerHTML = `<div class="muted">错误: ${esc(e.message)}</div>`; }
 }
 $('scout-go').onclick = () => { const v = $('scout-input').value; if (v.trim()) scout(v); };
 $('scout-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('scout-go').click(); });
