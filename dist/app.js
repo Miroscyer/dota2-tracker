@@ -1,4 +1,4 @@
-/* Dota 2 Tracker — overlay UI.
+/* 大话游戏 | DOTA2助手 — overlay UI.
  * Live in-game stats come from the GSI server over WebSocket (primary source);
  * the Scouting tab and AI button use the OpenDota/AI HTTP endpoints. */
 
@@ -33,8 +33,18 @@ function pretty(name, prefix) {
   let s = name.startsWith(prefix) ? name.slice(prefix.length) : name;
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 }
-const heroName = (n) => pretty(n, 'npc_dota_hero_');
-const itemName = (n) => pretty(n, 'item_');
+// 物品名称: 支持传入对象(含name_zh)或字符串
+function itemName(it) {
+  if (typeof it === 'object' && it?.name_zh) return it.name_zh;
+  const n = typeof it === 'object' ? it?.name : it;
+  return pretty(n || '', 'item_');
+}
+// 英雄名称: 支持传入对象(含name_zh)或字符串
+function heroName(h) {
+  if (typeof h === 'object' && h?.name_zh) return h.name_zh;
+  const n = typeof h === 'object' ? h?.name : h;
+  return pretty(n || '', 'npc_dota_hero_');
+}
 const abilityName = (n) => pretty(n, '');
 const fmt = (n) => (typeof n === 'number' ? n.toLocaleString('en-US') : '0');
 
@@ -86,7 +96,7 @@ function render(s) {
 
   // Hero — name + status only. HP/mana/level are intentionally NOT displayed,
   // but they stay in `lastState` and are sent to the AI assistant.
-  $('hero-name').textContent = heroName(h.name) || '—';
+  $('hero-name').textContent = heroName(h) || '—';
 
   const row = $('hero-status');
   row.innerHTML = '';
@@ -146,14 +156,14 @@ function renderItems(items) {
     div.className = `item-slot${empty ? ' empty' : ''}`;
     if (empty) { div.textContent = '·'; }
     else {
-      div.textContent = itemName(it.name);
+      div.textContent = itemName(it);
       if (it.cooldown > 0) { const c = document.createElement('span'); c.className = 'cd'; c.textContent = `${Math.ceil(it.cooldown)}s`; div.appendChild(c); }
       if (it.charges) { const c = document.createElement('span'); c.className = 'charges'; c.textContent = it.charges; div.appendChild(c); }
     }
     grid.appendChild(div);
   }
   const n = items && items.neutral0;
-  $('neutral-item').textContent = n && n.name !== 'empty' ? itemName(n.name) : '—';
+  $('neutral-item').textContent = n && n.name !== 'empty' ? itemName(n) : '—';
 }
 
 function renderAbilities(ab) {
@@ -192,7 +202,7 @@ function renderBuildings(b) {
 function setConn(state) {
   const el = $('conn');
   el.className = 'conn conn--' + state;
-  $('conn-text').textContent = state === 'live' ? 'live' : state === 'server' ? '等待 Dota' : '无连接';
+  $('conn-text').textContent = state === 'live' ? 'live' : state === 'server' ? '等待 DOTA2' : '无连接';
   // Update the waiting screen's status line to match.
   const ws = $('wait-status'), sub = $('wait-sub');
   if (!ws) return;
@@ -201,12 +211,13 @@ function setConn(state) {
     ws.className = 'wait-status ws-off';
     if (sub) sub.textContent = '服务器未启动或端口 3001 被占用。打开日志 (▤) 查看原因。';
   } else if (state === 'server') {
-    ws.textContent = '✓ 服务器运行中 · 等待 Dota 数据';
+    ws.textContent = '✓ 服务器运行中 · 等待 DOTA2 数据';
     ws.className = 'wait-status ws-server';
     if (sub) sub.textContent = '进入比赛、机器人游戏或英雄试玩。';
   }
 }
 let ws;
+let lastLiveMatchId = null;
 function connect() {
   ws = new WebSocket(WS);
   ws.onopen = () => setConn('server');
@@ -216,11 +227,24 @@ function connect() {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === 'waiting') {
       setConn('server'); // server up, no Dota data yet
+      $('live-players-card').classList.add('hidden');
+      lastLiveMatchId = null;
     } else if (m.type === 'state') {
       setConn('live');
       render(m.payload);
       // Once a match is feeding data, the server can identify "me" — refresh it.
       if (!meLoaded) { meLoaded = true; loadMe(); }
+      // 比赛ID变化时加载当前对局玩家
+      const matchId = m.payload?.map?.matchid;
+      if (matchId && matchId !== '0') {
+        if (matchId !== lastLiveMatchId) {
+          lastLiveMatchId = matchId;
+          loadLivePlayers(matchId);
+        }
+      } else {
+        $('live-players-card').classList.add('hidden');
+        lastLiveMatchId = null;
+      }
     }
   };
 }
@@ -302,11 +326,22 @@ function rankName(t) {
   return `${medal}${stars ? ' ' + stars + '星' : ''}`;
 }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const GAME_MODES = { 0:'未知',1:'全选',2:'队长模式',3:'随机征召',4:'单一征召',5:'全随机',7:'冥魂之夜',12:'最少玩',16:'队长征召',18:'技能征召',20:'全随机死斗',21:'1v1中单',22:'全征召',23:'加速' };
+const LANE_ROLES = { 1:'优势路(1)',2:'中路(2)',3:'劣势路(3)',4:'优势路辅助(4)',5:'劣势路辅助(5)' };
+const modeName = (m) => GAME_MODES[m] || '其他';
+const laneName = (l) => LANE_ROLES[l] || '—';
+const durStr = (s) => s ? `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}` : '—';
+const timeStr = (ts) => { try { return new Date(ts*1000).toLocaleDateString('zh-CN'); } catch { return '—'; } };
 
+// 缓存已加载的档案 (用于子标签切换回概览)
+const profileCache = new Map();
+
+// ── 档案渲染 (含子标签) ──────────────────────────────────────────────────────
 function profileHTML(p) {
   if (!p || p.error) return `<div class="muted">${esc(p?.error) || '未找到档案'}</div>`;
+  profileCache.set(String(p.accountId), p);
   const wrCls = p.winrate == null ? '' : p.winrate >= 50 ? 'wr-good' : 'wr-bad';
-  return `
+  return `<div class="profile-wrap" data-aid="${esc(p.accountId)}">
     <div class="profile-card">
       ${p.avatar ? `<img src="${esc(p.avatar)}" alt="" />` : '<div class="profile-noavatar">🧍</div>'}
       <div class="profile-meta">
@@ -314,11 +349,306 @@ function profileHTML(p) {
         <div class="profile-sub"><span class="rank-pill">${esc(rankName(p.rank))}</span> 胜率 <span class="${wrCls}">${p.winrate ?? '—'}%</span> <span class="muted">(${p.totalGames || 0} 局)</span></div>
         ${p.avgKDA ? `<div class="profile-sub muted">Ø KDA ${p.avgKDA.k}/${p.avgKDA.d}/${p.avgKDA.a} · GPM ${p.avgGPM} · XPM ${p.avgXPM}</div>` : ''}
       </div>
+      <button class="ai-analyze-btn" data-aid="${esc(p.accountId)}" title="AI 玩家画像分析">🤖 分析</button>
     </div>
-    ${(p.topHeroes || []).length ? '<div class="mini-title">常用英雄</div>' + p.topHeroes.map((h) =>
-      `<div class="top-hero"><span>${esc(h.name)}</span><span class="muted">${h.games} 局 · <b class="${h.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${h.winrate}%</b></span></div>`).join('') : ''}`;
+    <div class="ai-analyze-result hidden"></div>
+    <div class="sub-tabs">
+      <button class="sub-tab sub-tab--active" data-subtab="overview">概览</button>
+      <button class="sub-tab" data-subtab="recent">比赛</button>
+      <button class="sub-tab" data-subtab="peers">队友</button>
+      <button class="sub-tab" data-subtab="heroes">英雄</button>
+      <button class="sub-tab" data-subtab="rankings">排名</button>
+      <button class="sub-tab" data-subtab="stats">统计</button>
+    </div>
+    <div class="sub-content">${renderOverview(p)}</div>
+  </div>`;
 }
 
+// ── 子标签内容渲染器 ─────────────────────────────────────────────────────────
+function renderOverview(p) {
+  let html = '';
+  // 胜率趋势 (从常用英雄推断 — 简单展示)
+  if (p.topHeroes && p.topHeroes.length) {
+    html += '<div class="mini-title">常用英雄</div>';
+    html += p.topHeroes.map(h =>
+      `<div class="top-hero"><span>${esc(h.name)}</span><span class="muted">${h.games} 局 · <b class="${h.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${h.winrate}%</b></span></div>`
+    ).join('');
+  }
+  if (p.mostCommonRole) {
+    html += `<div class="mini-title">常玩位置</div><div class="top-hero"><span>${laneName(p.mostCommonRole)}</span></div>`;
+  }
+  return html || '<div class="muted">暂无数据</div>';
+}
+
+function renderRecentMatches(matches) {
+  if (!Array.isArray(matches) || !matches.length) return '<div class="muted">暂无比赛记录</div>';
+  // 胜率趋势条
+  const trend = matches.slice(0, 20).reverse().map(m =>
+    `<div class="trend-cell ${m.win ? 'win' : 'loss'}" title="${esc(m.heroName)} ${m.win ? '胜' : '负'}"></div>`
+  ).join('');
+  const wins = matches.filter(m => m.win).length;
+  const wr = Math.round(wins / matches.length * 100);
+  return `<div class="trend-row"><span class="muted">近${matches.length}场</span><div class="trend-bar">${trend}</div><b class="${wr >= 50 ? 'wr-good' : 'wr-bad'}">${wr}%</b></div>`
+    + matches.map(m => `
+    <div class="match-row ${m.win ? 'win' : 'loss'}">
+      <div class="match-hero">${esc(m.heroName)}</div>
+      <div class="match-stats">
+        <span class="match-result">${m.win ? '胜' : '负'}</span>
+        <span class="muted">${modeName(m.game_mode)} · ${durStr(m.duration)}</span>
+      </div>
+      <div class="match-kda">
+        <b>${m.kills}/${m.deaths}/${m.assists}</b>
+        <span class="muted">${m.gpm} GPM</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderPeers(peers) {
+  if (!Array.isArray(peers) || !peers.length) return '<div class="muted">暂无队友数据</div>';
+  return peers.map(p => `
+    <div class="peer-row" data-id="${p.account_id}">
+      <div class="peer-name">${esc(p.personaname)}</div>
+      <div class="peer-stats">
+        <span class="muted">${p.games} 局</span>
+        <b class="${p.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${p.winrate}%</b>
+      </div>
+    </div>`).join('');
+}
+
+function renderHeroesFull(heroes) {
+  if (!Array.isArray(heroes) || !heroes.length) return '<div class="muted">暂无英雄数据</div>';
+  return heroes.map(h => `
+    <div class="hero-stat-row">
+      <div class="hero-stat-name">${esc(h.heroName)}</div>
+      <div class="hero-stat-games">${h.games}场</div>
+      <div class="hero-stat-wr ${h.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${h.winrate}%</div>
+      <div class="hero-stat-bar"><div class="hero-stat-bar-fill" style="width:${h.winrate}%"></div></div>
+    </div>`).join('');
+}
+
+function renderRankings(rankings) {
+  if (!Array.isArray(rankings) || !rankings.length) return '<div class="muted">暂无排名数据 (需要更多比赛场次)</div>';
+  return rankings.map(r => `
+    <div class="ranking-row">
+      <div class="ranking-hero">${esc(r.heroName)}</div>
+      <div class="ranking-rank">${r.score}分</div>
+      <div class="ranking-pct muted">前 ${(r.percent_rank * 100).toFixed(1)}%</div>
+    </div>`).join('');
+}
+
+function renderWordCounts(words) {
+  if (!Array.isArray(words) || !words.length) return '<div class="muted">暂无聊天数据</div>';
+  const maxCount = words[0]?.count || 1;
+  return words.map(w => `
+    <div class="word-row">
+      <span class="word-text">${esc(w.word)}</span>
+      <span class="word-bar"><span class="word-bar-fill" style="width:${(w.count/maxCount*100)}%"></span></span>
+      <span class="word-count muted">${w.count}</span>
+    </div>`).join('');
+}
+
+// 基于近期比赛计算统计数据
+function renderStats(matches) {
+  if (!Array.isArray(matches) || !matches.length) return '<div class="muted">暂无统计数据</div>';
+  const wins = matches.filter(m => m.win).length;
+  const total = matches.length;
+  const wr = Math.round(wins / total * 100);
+  const avgKills = (matches.reduce((s,m) => s + m.kills, 0) / total).toFixed(1);
+  const avgDeaths = (matches.reduce((s,m) => s + m.deaths, 0) / total).toFixed(1);
+  const avgAssists = (matches.reduce((s,m) => s + m.assists, 0) / total).toFixed(1);
+  const avgKDA = avgDeaths > 0 ? ((+avgKills + +avgAssists) / avgDeaths).toFixed(2) : (+avgKills + +avgAssists).toFixed(1);
+  const avgGPM = Math.round(matches.reduce((s,m) => s + m.gpm, 0) / total);
+  const avgXPM = Math.round(matches.reduce((s,m) => s + m.xpm, 0) / total);
+  const avgDuration = Math.round(matches.reduce((s,m) => s + m.duration, 0) / total);
+  const avgLH = Math.round(matches.reduce((s,m) => s + m.last_hits, 0) / total);
+  // 按位置统计
+  const laneCounts = {};
+  matches.forEach(m => { if (m.lane_role) laneCounts[m.lane_role] = (laneCounts[m.lane_role] || 0) + 1; });
+  const topLane = Object.entries(laneCounts).sort((a,b) => b[1] - a[1])[0];
+  return `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-val ${wr >= 50 ? 'wr-good' : 'wr-bad'}">${wr}%</div><div class="stat-label">胜率</div></div>
+      <div class="stat-item"><div class="stat-val">${wins}/${total}</div><div class="stat-label">胜/负</div></div>
+      <div class="stat-item"><div class="stat-val">${avgKDA}</div><div class="stat-label">平均 KDA</div></div>
+      <div class="stat-item"><div class="stat-val">${avgGPM}</div><div class="stat-label">平均 GPM</div></div>
+      <div class="stat-item"><div class="stat-val">${avgXPM}</div><div class="stat-label">平均 XPM</div></div>
+      <div class="stat-item"><div class="stat-val">${avgLH}</div><div class="stat-label">平均正补</div></div>
+      <div class="stat-item"><div class="stat-val">${durStr(avgDuration)}</div><div class="stat-label">场均时长</div></div>
+      <div class="stat-item"><div class="stat-val">${topLane ? laneName(topLane[0]) : '—'}</div><div class="stat-label">常用位置</div></div>
+    </div>
+    <div class="mini-title">KDA 分布</div>
+    <div class="trend-row"><span class="muted">击杀</span><div class="trend-bar"><div class="hero-stat-bar-fill" style="width:${Math.min(+avgKills/20*100, 100)}%"></div></div><b>${avgKills}</b></div>
+    <div class="trend-row"><span class="muted">死亡</span><div class="trend-bar"><div class="hero-stat-bar-fill" style="width:${Math.min(+avgDeaths/15*100, 100)}%; background:#f06464"></div></div><b>${avgDeaths}</b></div>
+    <div class="trend-row"><span class="muted">助攻</span><div class="trend-bar"><div class="hero-stat-bar-fill" style="width:${Math.min(+avgAssists/25*100, 100)}%; background:#4ecdc4"></div></div><b>${avgAssists}</b></div>
+  `;
+}
+
+// ── 子标签数据加载 ───────────────────────────────────────────────────────────
+const SUBTAB_ENDPOINTS = { recent: 'recent', peers: 'peers', heroes: 'heroes', rankings: 'rankings', stats: 'recent' };
+
+async function loadSubTab(accountId, type, container) {
+  container.innerHTML = '<div class="muted">加载中…</div>';
+  try {
+    const endpoint = SUBTAB_ENDPOINTS[type] || type;
+    const r = await fetch(`${API}/profile/${accountId}/${endpoint}`);
+    if (!r.ok) { container.innerHTML = '<div class="muted">加载失败</div>'; return; }
+    const data = await r.json();
+    const renderers = { recent: renderRecentMatches, peers: renderPeers, heroes: renderHeroesFull, rankings: renderRankings, stats: renderStats };
+    const fn = renderers[type];
+    container.innerHTML = fn ? fn(data) : '<div class="muted">未知标签</div>';
+    // 队友行可点击 → 查找该玩家
+    if (type === 'peers') {
+      container.querySelectorAll('.peer-row').forEach(row => {
+        row.onclick = () => { $('scout-input').value = row.dataset.id; scout(row.dataset.id); };
+      });
+    }
+  } catch (e) { container.innerHTML = `<div class="muted">错误: ${esc(e.message)}</div>`; }
+}
+
+// ── AI 玩家分析 ──────────────────────────────────────────────────────────────
+let analyzingSet = new Set();
+async function runAIAnalysis(accountId, resultEl, btn) {
+  if (analyzingSet.has(accountId)) return;
+  analyzingSet.add(accountId);
+  const original = btn.textContent;
+  btn.textContent = '分析中…';
+  btn.disabled = true;
+  resultEl.classList.remove('hidden');
+  resultEl.innerHTML = '<div class="ai-analyze-loading"><span class="ai-spinner"></span> 正在分析玩家数据，请稍候…</div>';
+  try {
+    const r = await fetch(`${API}/profile/${accountId}/analyze`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || '分析失败');
+    resultEl.innerHTML = formatAIAnalysis(data.text);
+    btn.textContent = '🔄 重新分析';
+  } catch (e) {
+    resultEl.innerHTML = `<div class="ai-error">❌ ${esc(e.message)}</div>`;
+    btn.textContent = '🤖 分析';
+  } finally {
+    btn.disabled = false;
+    analyzingSet.delete(accountId);
+  }
+}
+
+function formatAIAnalysis(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const fullText = lines.join('\n');
+  const sectionTitles = ['🎯','🔬','⚔️','🔥','💡','📊','🎮','🧠','⚠️','✨'];
+  let html = `<div class="ai-analyze-content" data-full="${esc(fullText)}">`;
+  // 顶部浮动复制按钮 — 复制完整分析
+  html += '<button class="ai-copy-all-btn" data-text="' + esc(fullText) + '" title="复制完整分析">📋 复制全部</button>';
+  lines.forEach(line => {
+    if (sectionTitles.some(e => line.startsWith(e))) {
+      html += `<div class="ai-section-title">${line}</div>`;
+    } else if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+      html += `<div class="ai-bullet">${line.replace(/^[•\-\*]\s*/, '')}</div>`;
+    } else {
+      html += `<div class="ai-text">${line}</div>`;
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
+// 复制按钮事件委托
+document.addEventListener('click', (e) => {
+  const copyBtn = e.target.closest('.ai-copy-all-btn, .ai-copy-btn');
+  if (!copyBtn) return;
+  const text = copyBtn.dataset.text || '';
+  const doCopy = (t) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); resolve(); } catch (e) { reject(e); }
+      document.body.removeChild(ta);
+    });
+  };
+  const original = copyBtn.textContent;
+  doCopy(text).then(() => {
+    copyBtn.textContent = '✓ 已复制';
+    setTimeout(() => { copyBtn.textContent = original; }, 1500);
+  }).catch(() => {
+    copyBtn.textContent = '❌ 失败';
+    setTimeout(() => { copyBtn.textContent = original; }, 1500);
+  });
+});
+
+// 子标签点击 (事件委托 — 支持多个档案区域)
+document.addEventListener('click', (e) => {
+  // AI 分析按钮
+  const btn = e.target.closest('.ai-analyze-btn');
+  if (btn) {
+    const wrap = btn.closest('.profile-wrap');
+    if (wrap) {
+      const aid = btn.dataset.aid;
+      const resultEl = wrap.querySelector('.ai-analyze-result');
+      runAIAnalysis(aid, resultEl, btn);
+    }
+    return;
+  }
+  const tab = e.target.closest('.sub-tab');
+  if (!tab) return;
+  const wrap = tab.closest('.profile-wrap');
+  if (!wrap) return;
+  const accountId = wrap.dataset.aid;
+  if (!accountId) return;
+  wrap.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('sub-tab--active'));
+  tab.classList.add('sub-tab--active');
+  const type = tab.dataset.subtab;
+  const container = wrap.querySelector('.sub-content');
+  if (type === 'overview') {
+    const cached = profileCache.get(accountId);
+    container.innerHTML = cached ? renderOverview(cached) : '<div class="muted">暂无数据</div>';
+  } else {
+    loadSubTab(accountId, type, container);
+  }
+});
+
+// ── 当前对局玩家 ─────────────────────────────────────────────────────────────
+async function loadLivePlayers(matchId) {
+  const card = $('live-players-card');
+  const box = $('live-players');
+  card.classList.remove('hidden');
+  box.innerHTML = '<div class="muted">加载对局玩家数据…</div>';
+  try {
+    const r = await fetch(`${API}/live/${matchId}`);
+    if (!r.ok) { box.innerHTML = '<div class="muted">此比赛数据不可用 (非公开/锦标赛)</div>'; return; }
+    const data = await r.json();
+    if (data.partial) {
+      box.innerHTML = '<div class="muted" style="margin-bottom:6px">普通比赛仅暴露你的数据 — 其他玩家不可查</div>' + renderLivePlayers(data);
+    } else {
+      box.innerHTML = renderLivePlayers(data);
+    }
+    // 点击玩家 → 查找
+    box.querySelectorAll('.live-player').forEach(el => {
+      if (el.dataset.id) el.onclick = () => { $('scout-input').value = el.dataset.id; scout(el.dataset.id); };
+    });
+  } catch (e) { box.innerHTML = '<div class="muted">无法加载对局数据</div>'; }
+}
+
+function renderLivePlayers(data) {
+  if (!data?.players?.length) return '<div class="muted">无玩家数据</div>';
+  const radiant = data.players.filter(p => p.team_number === 0);
+  const dire = data.players.filter(p => p.team_number === 1);
+  const renderTeam = (players, name, cls) => `
+    <div class="live-team ${cls}">
+      <div class="live-team-name">${name}</div>
+      ${players.map(p => `
+        <div class="live-player" data-id="${p.account_id || ''}">
+          <span class="live-hero">${esc(p.heroName || '—')}</span>
+          <span class="live-name muted">${esc(p.personaname || p.profile?.name || '匿名')}</span>
+          ${p.profile?.rank ? `<span class="live-rank muted">${esc(rankName(p.profile.rank))}</span>` : ''}
+          ${p.profile?.winrate != null ? `<span class="live-wr ${p.profile.winrate >= 50 ? 'wr-good' : 'wr-bad'}">${p.profile.winrate}%</span>` : ''}
+        </div>`).join('')}
+    </div>`;
+  return renderTeam(radiant, '天辉', 'live-team--radiant') + renderTeam(dire, '夜魇', 'live-team--dire');
+}
+
+// ── 档案加载 ─────────────────────────────────────────────────────────────────
 async function loadMe() {
   const box = $('me-result');
   try {

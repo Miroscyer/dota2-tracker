@@ -168,6 +168,7 @@ function createWindow() {
     width: 440, height: 760,
     x: width - 460, y: 20,
     show: !startedHidden, // launched at login → start hidden in the tray
+    title: '大话游戏 | DOTA2助手',
     frame: false, transparent: true,
     alwaysOnTop: true, skipTaskbar: false,
     resizable: true, hasShadow: false,
@@ -191,7 +192,7 @@ function createSettingsWindow() {
   if (settingsWindow) { settingsWindow.focus(); return; }
   settingsWindow = new BrowserWindow({
     width: 520, height: 600,
-    title: 'Dota 2 Tracker — 设置',
+    title: '大话游戏 | DOTA2助手 — 设置',
     backgroundColor: '#0a0c12', frame: true, resizable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -235,7 +236,7 @@ body{background:#0a0c12;color:#c8d0e0;font-family:'Segoe UI',sans-serif;font-siz
 .divider{height:1px;background:#1e2535;margin:8px 0}
 code{background:#1e2535;padding:2px 6px;border-radius:3px;color:#c8d0e0}
 </style></head><body>
-<div class="header"><h1>⚙ 设置</h1><p id="ver-line">Dota 2 Tracker v—</p></div>
+<div class="header"><h1>⚙ 设置</h1><p id="ver-line">大话游戏 | DOTA2助手 v—</p></div>
 <div class="body">
   <div class="section"><div class="section-title">更新</div>
     <div class="card">
@@ -304,13 +305,13 @@ code{background:#1e2535;padding:2px 6px;border-radius:3px;color:#c8d0e0}
   </div>
   <div class="section"><div class="section-title">关于</div>
     <div class="card" style="font-size:11px;color:#4a5168;line-height:2">
-      <div>Dota 2 Tracker · <a class="link" onclick="openExternal('https://github.com/CrabotY/dota2-tracker');return false">CrabotY/dota2-tracker</a></div>
+      <div>大话游戏 | DOTA2助手 · <a class="link" onclick="openExternal('https://github.com/CrabotY/dota2-tracker');return false">CrabotY/dota2-tracker</a></div>
       <div>实时数据: Valve Game State Integration · 玩家资料: OpenDota</div></div>
   </div>
 </div>
 <script>
 const api = window.electronAPI;
-api?.onAppVersion(v => { document.getElementById('cur-ver').textContent='v'+v; document.getElementById('ver-line').textContent='Dota 2 Tracker v'+v; });
+api?.onAppVersion(v => { document.getElementById('cur-ver').textContent='v'+v; document.getElementById('ver-line').textContent='大话游戏 | DOTA2助手 v'+v; });
 api?.onUpdateStatus(info => {
   const $=id=>document.getElementById(id);
   const tag=$('update-tag'),msg=$('update-msg'),dl=$('download-btn'),inst=$('install-btn'),chk=$('check-btn'),pw=$('progress-wrap'),pf=$('progress-fill'),pt=$('progress-text'),nt=$('release-notes');
@@ -336,7 +337,7 @@ fetch('http://localhost:3001/ai/info').then(r=>r.json()).then(i=>{if(i&&i.provid
 function createLogsWindow() {
   if (logsWindow) { logsWindow.focus(); return; }
   logsWindow = new BrowserWindow({
-    width: 700, height: 500,     title: 'Dota 2 Tracker — 日志',
+    width: 700, height: 500,     title: '大话游戏 | DOTA2助手 — 日志',
     backgroundColor: '#0a0c12',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
@@ -382,9 +383,9 @@ if(window.electronAPI){window.electronAPI.onLog(e=>add(e));window.electronAPI.on
 // ─── 托盘 ─────────────────────────────────────────────────────────────
 function createTray() {
   tray = new Tray(nativeImage.createEmpty());
-  tray.setToolTip('Dota 2 Tracker');
+  tray.setToolTip('大话游戏 | DOTA2助手');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Dota 2 Tracker', enabled: false },
+    { label: '大话游戏 | DOTA2助手', enabled: false },
     { type: 'separator' },
     { label: '显示追踪器', click: () => mainWindow?.show() },
     { label: '设置',       click: () => createSettingsWindow() },
@@ -435,7 +436,7 @@ app.on('second-instance', () => { mainWindow?.show(); mainWindow?.focus(); });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 if (hasLock) app.whenReady().then(() => {
-  pushLog('info', `═══ Dota 2 Tracker v${app.getVersion()} ═══`);
+  pushLog('info', `═══ 大话游戏 | DOTA2助手 v${app.getVersion()} ═══`);
   applyAutoLaunch(loadSettings().autoLaunch !== false); // default ON
   installGsiConfig();
   startGSIServer();

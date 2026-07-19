@@ -1,4 +1,4 @@
-# Dota 2 Tracker
+# 大话游戏 | DOTA2助手
 
 A live, in-game Dota 2 **overlay** that shows your real-time match stats and lets
 you scout any player — built on Valve's official **Game State Integration (GSI)**.
@@ -70,6 +70,7 @@ npm run mock       # terminal 2 — streams a fake live match
 
 ```bash
 npm run dist       # → release/Dota-2-Tracker-Setup-<version>.exe
+# (productName 已改为「大话游戏 | DOTA2助手」，安装包显示名随之变更)
 ```
 
 The GitHub Actions workflow (`.github/workflows/build-release.yml`) builds the

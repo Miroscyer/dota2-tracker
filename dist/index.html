@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dota 2 Tracker</title>
+  <title>大话游戏 | DOTA2助手</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- Draggable overlay title bar -->
   <header class="titlebar">
     <div class="title-left">
-      <span class="logo">DOTA<span class="logo-2">2</span></span>
+      <span class="logo">大话游戏<span class="logo-sub">| DOTA2 助手</span></span>
       <span id="conn" class="conn conn--off"><span class="dot"></span><span id="conn-text">…</span></span>
     </div>
     <div class="title-btns">
@@ -30,7 +30,7 @@
   <!-- ───────── LIVE MATCH TAB ───────── -->
   <main id="tab-match" class="tabpane">
     <section id="waiting" class="waiting">
-      <div class="wait-title">等待 Dota 2…</div>
+      <div class="wait-title">等待 DOTA2 数据…</div>
       <div id="wait-status" class="wait-status"></div>
       <div class="wait-sub" id="wait-sub">进入比赛、机器人游戏或英雄试玩。</div>
       <div class="wait-tip">
@@ -109,6 +109,11 @@
 
   <!-- ───────── SCOUTING TAB ───────── -->
   <main id="tab-scout" class="tabpane hidden">
+    <!-- 当前对局玩家 (仅在比赛中显示) -->
+    <section class="card hidden" id="live-players-card">
+      <div class="card-title">当前对局玩家 <span class="live-badge">实时</span></div>
+      <div id="live-players" class="live-players"><div class="muted">等待比赛数据…</div></div>
+    </section>
     <section class="card">
       <div class="card-title">你的档案 <span class="auto-badge">自动</span></div>
       <div id="me-result" class="scout-result"><div class="muted">正在识别账号…</div></div>

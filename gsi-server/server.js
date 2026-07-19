@@ -37,13 +37,42 @@ const OPENDOTA = 'https://api.opendota.com/api';
 
 let currentState   = null;   // full enriched GSI snapshot (live)
 let playerCache    = {};
-let heroesCache    = {};
+let heroesCache    = {};  // hero_id -> Chinese name (优先中文, 否则用 OpenDota 英文)
+let heroNameToId   = {};  // npc_dota_hero_xxx -> hero_id  (用于 GSI 名称反查)
 let itemCostCache  = {};     // item short-name -> gold cost (from OpenDota)
+let itemNameCache  = {};     // item short-name -> Chinese name
 let currentMatchId = null;
 // Heroes seen this match (accumulated — survives fog of war). Allies are always
 // on the minimap; enemies get added once spotted. Reset on a new match.
 let seenHeroes = { allies: new Set(), enemies: new Set() };
 let minimapEverSeen = false; // false => GSI cfg likely lacks minimap (restart Dota)
+
+// ─── 加载中文翻译 ────────────────────────────────────────────────────────────
+function loadZhTranslations() {
+  try {
+    const heroZhPath = path.join(__dirname, '..', 'data', 'heroes-zh.json');
+    if (fs.existsSync(heroZhPath)) {
+      const zh = JSON.parse(fs.readFileSync(heroZhPath, 'utf8'));
+      for (const id of Object.keys(zh)) { heroesCache[Number(id)] = zh[id]; }
+      console.log(`[翻译] 已加载 ${Object.keys(zh).length} 位英雄中文名`);
+    }
+  } catch (e) { console.warn('[翻译] 英雄中文加载失败:', e.message); }
+  try {
+    const itemZhPath = path.join(__dirname, '..', 'data', 'items-zh.json');
+    if (fs.existsSync(itemZhPath)) {
+      itemNameCache = JSON.parse(fs.readFileSync(itemZhPath, 'utf8'));
+      console.log(`[翻译] 已加载 ${Object.keys(itemNameCache).length} 件物品中文名`);
+    }
+  } catch (e) { console.warn('[翻译] 物品中文加载失败:', e.message); }
+}
+loadZhTranslations();
+
+// 物品名称获取: 优先中文, 否则用 prettyName 回退
+function itemZhName(rawName) {
+  if (!rawName || rawName === 'empty') return null;
+  const key = rawName.replace(/^item_/, '');
+  return itemNameCache[key] || null;
+}
 
 // ─── "我"是谁 — 自动识别 ─────────────────────────────────────────────
 // 优先级: 实时 GSI 的 account id > 本地 Steam 登录的 SteamID.
@@ -61,6 +90,11 @@ function detectLocalSteam() {
   } catch (e) { console.error('[Steam] detect:', e.message); }
 }
 function myAccountId() { return liveAccountId || localAccountId; }
+
+// SteamID64 / Account ID 互转辅助
+function toAccountId(raw) {
+  return raw.length > 12 ? String(BigInt(raw) - BigInt('76561197960265728')) : raw;
+}
 
 // ─── WebSocket: live push to the overlay ──────────────────────────────────────
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -91,6 +125,22 @@ function enrich(raw) {
     out.derived.alive = h.alive;
     out.derived.respawnSeconds = h.respawn_seconds || 0;
   }
+  // 英雄中文名
+  if (h && h.name) {
+    out.hero = { ...h, name_zh: heroZhFromNpc(h.name) || null };
+  }
+  // 物品中文名
+  if (raw.items) {
+    const items = { ...raw.items };
+    for (const k of Object.keys(items)) {
+      const it = items[k];
+      if (it && it.name && it.name !== 'empty') {
+        items[k] = { ...it, name_zh: itemZh(it.name) || null };
+      }
+    }
+    out.items = items;
+  }
+  // 技能中文名 (保留英文 + 可选中文; 先用原名, 中文后续可扩展)
   out.derived.receivedAt = Date.now();
   return out;
 }
@@ -125,15 +175,32 @@ async function loadItemCosts() {
   }
 }
 
-// ─── 英雄 ────────────────────────────────────────────────────────────
+// ─── 英雄 (从 OpenDota 补全中文没有的) ──────────────────────────────────
 async function loadHeroes() {
   try {
     const { data } = await axios.get(`${OPENDOTA}/heroes`, { timeout: 8000 });
-    data.forEach(h => { heroesCache[h.id] = h.localized_name; });
-    console.log(`[OpenDota] 已加载 ${data.length} 位英雄`);
+    let added = 0;
+    data.forEach(h => {
+      // 建立 npc_name -> id 反查表
+      if (h.name) heroNameToId[h.name] = h.id;
+      // 只补全中文翻译中没有的英雄
+      if (!heroesCache[h.id]) {
+        heroesCache[h.id] = h.localized_name;
+        added++;
+      }
+    });
+    console.log(`[OpenDota] 英雄库 ${data.length} 位 (中文翻译已加载, 补全 ${added} 位英文)`);
   } catch (e) {
     console.error('[OpenDota] 英雄加载错误:', e.message);
   }
+}
+
+// 通过 npc_dota_hero_xxx 名称获取中文英雄名
+function heroZhFromNpc(npcName) {
+  if (!npcName) return null;
+  const id = heroNameToId[npcName];
+  if (id && heroesCache[id]) return heroesCache[id];
+  return prettyName(npcName, /^npc_dota_hero_/);
 }
 
 // ─── 玩家档案 ───────────────────────────────────────────────────────────
@@ -203,6 +270,81 @@ async function fetchPlayerProfile(accountId) {
     console.error(`[OpenDota] 档案 ${accountId}:`, e.message);
     return { accountId: id, name: '加载错误', winrate: null, avgKDA: null };
   }
+}
+
+// ─── 近期比赛 (OpenDota) ────────────────────────────────────────────────────
+async function fetchRecentMatches(accountId, limit = 20) {
+  const { data } = await axios.get(`${OPENDOTA}/players/${accountId}/recentMatches`, { timeout: 8000 });
+  return (data || []).slice(0, limit).map(m => ({
+    match_id:    m.match_id,
+    hero_id:     m.hero_id,
+    heroName:    heroesCache[m.hero_id] || `Hero ${m.hero_id}`,
+    kills:       m.kills || 0,
+    deaths:      m.deaths || 0,
+    assists:     m.assists || 0,
+    gpm:         m.gold_per_min || 0,
+    xpm:         m.xp_per_min || 0,
+    duration:    m.duration || 0,
+    game_mode:   m.game_mode,
+    start_time:  m.start_time,
+    win:         m.radiant_win ? (m.player_slot < 128) : (m.player_slot >= 128),
+    last_hits:   m.last_hits || 0,
+    hero_damage: m.hero_damage || 0,
+    tower_damage:m.tower_damage || 0,
+    lane_role:   m.lane_role,
+  }));
+}
+
+// ─── 常用队友 (OpenDota) ────────────────────────────────────────────────────
+async function fetchPeers(accountId, limit = 15) {
+  const { data } = await axios.get(`${OPENDOTA}/players/${accountId}/peers`, { timeout: 8000 });
+  return (data || [])
+    .filter(p => (p.games || 0) >= 3)
+    .slice(0, limit)
+    .map(p => ({
+      account_id:  p.account_id,
+      personaname: p.personaname || '匿名',
+      avatar:      p.avatar,
+      games:       p.games || 0,
+      win:         p.win || 0,
+      winrate:     p.games > 0 ? Math.round(p.win / p.games * 100) : 0,
+    }));
+}
+
+// ─── 英雄排名 (OpenDota) ────────────────────────────────────────────────────
+async function fetchPlayerRankings(accountId) {
+  const { data } = await axios.get(`${OPENDOTA}/players/${accountId}/rankings`, { timeout: 8000 });
+  return (data || [])
+    .filter(r => r.score && r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 15)
+    .map(r => ({
+      hero_id:      r.hero_id,
+      heroName:     heroesCache[r.hero_id] || `Hero ${r.hero_id}`,
+      score:        Math.round(r.score),
+      percent_rank: r.percent_rank ?? 0,
+    }));
+}
+
+// ─── 完整英雄统计 (OpenDota) ────────────────────────────────────────────────
+async function fetchHeroesFull(accountId, limit = 20) {
+  const { data } = await axios.get(`${OPENDOTA}/players/${accountId}/heroes`, { timeout: 8000 });
+  return (data || [])
+    .filter(h => (h.games || 0) > 0)
+    .slice(0, limit)
+    .map(h => ({
+      hero_id:         h.hero_id,
+      heroName:        heroesCache[h.hero_id] || `Hero ${h.hero_id}`,
+      games:           h.games || 0,
+      win:             h.win || 0,
+      lose:            (h.games || 0) - (h.win || 0),
+      winrate:         h.games > 0 ? Math.round(h.win / h.games * 100) : 0,
+      last_played:     h.last_played,
+      with_games:      h.with_games || 0,
+      with_winrate:    h.with_games > 0 ? Math.round((h.with_win || 0) / h.with_games * 100) : 0,
+      against_games:   h.against_games || 0,
+      against_winrate: h.against_games > 0 ? Math.round((h.against_win || 0) / h.against_games * 100) : 0,
+    }));
 }
 
 // ─── 比赛 (赛后, OpenDota) ───────────────────────────────────────────────
@@ -360,7 +502,7 @@ function accumulateSeenHeroes(body) {
     const u = o && (o.unitname || o.name);
     if (!u || !String(u).startsWith('npc_dota_hero_')) continue;
     if (u === myHero) continue;
-    const hn = prettyName(u, /^npc_dota_hero_/);
+    const hn = heroZhFromNpc(u) || prettyName(u, /^npc_dota_hero_/);
     if (o.team === myTeamNum) seenHeroes.allies.add(hn);
     else if (o.team === 2 || o.team === 3) seenHeroes.enemies.add(hn);
   }
@@ -379,11 +521,182 @@ app.get('/me', async (req, res) => {
 });
 
 app.get('/profile/:id', async (req, res) => {
-  const raw = req.params.id;
-  const id = raw.length > 12 ? String(BigInt(raw) - BigInt('76561197960265728')) : raw;
+  const id = toAccountId(req.params.id);
   const profile = await fetchPlayerProfile(id);
   res.json(profile || { error: '未找到' });
 });
+
+// ─── 玩家详细数据端点 (侦察 Tab 子标签) ───────────────────────────────────────
+app.get('/profile/:id/recent', async (req, res) => {
+  const id = toAccountId(req.params.id);
+  try { res.json(await fetchRecentMatches(id)); }
+  catch (e) { console.error('[recent]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/profile/:id/peers', async (req, res) => {
+  const id = toAccountId(req.params.id);
+  try { res.json(await fetchPeers(id)); }
+  catch (e) { console.error('[peers]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/profile/:id/rankings', async (req, res) => {
+  const id = toAccountId(req.params.id);
+  try { res.json(await fetchPlayerRankings(id)); }
+  catch (e) { console.error('[rankings]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/profile/:id/heroes', async (req, res) => {
+  const id = toAccountId(req.params.id);
+  try { res.json(await fetchHeroesFull(id)); }
+  catch (e) { console.error('[heroes]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// ─── AI 玩家画像分析 ────────────────────────────────────────────────────────
+app.get('/profile/:id/analyze', async (req, res) => {
+  const id = toAccountId(req.params.id);
+  const env = userEnv();
+  const provider = AI_PROVIDERS[env.AI_PROVIDER] ? env.AI_PROVIDER : 'openai';
+  const key = env[AI_PROVIDERS[provider].envKey];
+  if (!key) {
+    return res.status(503).json({ error: `未设置「${AI_PROVIDERS[provider].label}」密钥 — 请在设置 ⚙ 中添加。` });
+  }
+  try {
+    const [profile, recent, heroesFull, rankings, peers] = await Promise.all([
+      fetchPlayerProfile(id).catch(() => null),
+      fetchRecentMatches(id).catch(() => []),
+      fetchHeroesFull(id).catch(() => []),
+      fetchPlayerRankings(id).catch(() => []),
+      fetchPeers(id).catch(() => []),
+    ]);
+    const prompt = buildScoutPrompt({ profile, recent, heroesFull, rankings, peers });
+    const text = await callProvider(provider, key, SCOUT_SYSTEM_PROMPT, [{ role: 'user', content: prompt }]);
+    res.json({ text, provider });
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// ─── 辅助函数 (侦察 AI 分析用) ────────────────────────────────────────────────
+const GAME_MODES = { 0:'未知',1:'全选',2:'队长模式',3:'随机征召',4:'单一征召',5:'全随机',7:'冥魂之夜',12:'最少玩',16:'队长征召',18:'技能征召',20:'全随机死斗',21:'1v1中单',22:'全征召',23:'加速' };
+const LANE_ROLE_NAMES = { 1:'优势路(1号位大哥)', 2:'中路(2号位中单)', 3:'劣势路(3号位)', 4:'优势路辅助(4号位)', 5:'劣势路辅助(5号位)' };
+function modeName(m) { return GAME_MODES[m] || '其他'; }
+function durStr(s) { return s ? `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}` : '—'; }
+function rankNameShort(t) {
+  const MEDALS_S = ['先锋','卫士','中军','统帅','传奇','万古流芳','超凡入圣','冠绝一世'];
+  if (!t) return '无段位';
+  const medal = MEDALS_S[Math.floor(t / 10) - 1];
+  if (!medal) return '无段位';
+  const stars = t % 10;
+  return `${medal}${stars ? stars + '星' : ''}`;
+}
+function laneRoleName(r) { return LANE_ROLE_NAMES[r] || '未知'; }
+
+const SCOUT_SYSTEM_PROMPT =
+  '你是一位资深 Dota 2 分析师和教练。你的任务是根据提供的玩家数据，' +
+  '生成一份专业、具体、有洞察力的玩家画像分析。用中文回答。\n\n' +
+  '严格按照以下结构输出（用表情符号开头分节，不要用 markdown）：\n\n' +
+  '🎯 玩家画像总结\n' +
+  '用 2-3 句话概括这个玩家的整体风格和水平。包括段位、主要位置、打法倾向。\n\n' +
+  '🔬 游戏习惯分析\n' +
+  '• 擅长位置和角色\n' +
+  '• 刷钱能力和节奏（GPM/XPM 水平）\n' +
+  '• 对线风格（激进/稳健/发育型）\n' +
+  '• 参团率和打架频率\n' +
+  '• 常用英雄池特点\n\n' +
+  '⚔️ 对线期特点\n' +
+  '• 补刀水平（正补/反补）\n' +
+  '• 常见对线英雄及表现\n' +
+  '• 强势期和弱势期\n' +
+  '• 对线期容易犯的错误\n\n' +
+  '🔥 团战打法分析\n' +
+  '• 团战定位和切入时机\n' +
+  '• 伤害输出能力\n' +
+  '• 生存能力和站位习惯\n' +
+  '• 技能释放倾向\n\n' +
+  '💡 应对建议\n' +
+  '• 对线期如何压制/针对\n' +
+  '• 团战如何处理\n' +
+  '• 最需要警惕的点\n' +
+  '• 推荐的克制英雄或打法\n\n' +
+  '要求：\n' +
+  '• 基于数据说话，不要凭空猜测\n' +
+  '• 每条建议都要具体，有可操作性\n' +
+  '• 如果数据不足某个方面，就跳过那方面，不要编造\n' +
+  '• 用简洁有力的语言，不要废话\n' +
+  '• 理解并使用中文 Dota 术语';
+
+function buildScoutPrompt(d) {
+  const p = d.profile || {};
+  let out = '';
+  out += '【玩家基本信息】\n';
+  out += `玩家名: ${p.name || '未知'}\n`;
+  out += `段位: ${rankNameShort(p.rank) || '无段位'}\n`;
+  out += `总场次: ${p.totalGames || 0}\n`;
+  out += `胜率: ${p.winrate ?? '未知'}%\n`;
+  if (p.avgKDA) out += `平均 KDA: ${p.avgKDA.k}/${p.avgKDA.d}/${p.avgKDA.a}\n`;
+  out += `平均 GPM: ${p.avgGPM || '—'}\n`;
+  out += `平均 XPM: ${p.avgXPM || '—'}\n`;
+  if (p.mostCommonRole) out += `最常见位置: ${laneRoleName(p.mostCommonRole)}\n`;
+  out += '\n';
+
+  if (d.topHeroes?.length || p.topHeroes?.length) {
+    const top = d.topHeroes || p.topHeroes || [];
+    out += '【常用英雄 Top 5】\n';
+    top.forEach(h => {
+      out += `• ${h.name}: ${h.games} 局, 胜率 ${h.winrate}%\n`;
+    });
+    out += '\n';
+  }
+
+  if (d.heroesFull?.length) {
+    out += '【英雄池详情】(前15位)\n';
+    d.heroesFull.slice(0, 15).forEach(h => {
+      out += `• ${h.heroName}: ${h.games}局 ${h.winrate}%胜率`;
+      if (h.with_games) out += ` (同队${h.with_winrate}%/对阵${h.against_winrate}%)`;
+      out += '\n';
+    });
+    out += '\n';
+  }
+
+  if (d.rankings?.length) {
+    out += '【英雄排名】\n';
+    d.rankings.slice(0, 10).forEach(r => {
+      out += `• ${r.heroName}: ${r.score}分, 前 ${(r.percent_rank * 100).toFixed(1)}%\n`;
+    });
+    out += '\n';
+  }
+
+  if (d.recent?.length) {
+    out += `【近期比赛】(最近 ${d.recent.length} 场)\n`;
+    const wins = d.recent.filter(m => m.win).length;
+    out += `近期胜率: ${Math.round(wins / d.recent.length * 100)}%\n`;
+    const avgK = (d.recent.reduce((s, m) => s + m.kills, 0) / d.recent.length).toFixed(1);
+    const avgD = (d.recent.reduce((s, m) => s + m.deaths, 0) / d.recent.length).toFixed(1);
+    const avgA = (d.recent.reduce((s, m) => s + m.assists, 0) / d.recent.length).toFixed(1);
+    out += `平均 KDA: ${avgK}/${avgD}/${avgA}\n`;
+    out += `平均 GPM: ${Math.round(d.recent.reduce((s, m) => s + m.gpm, 0) / d.recent.length)}\n`;
+    out += `平均正补: ${Math.round(d.recent.reduce((s, m) => s + (m.last_hits || 0), 0) / d.recent.length)}\n`;
+    out += '\n近期比赛明细:\n';
+    d.recent.slice(0, 10).forEach((m, i) => {
+      out += `${i + 1}. ${m.win ? '✅胜' : '❌负'} ${m.heroName} `;
+      out += `${m.kills}/${m.deaths}/${m.assists} GPM${m.gpm} `;
+      if (m.game_mode) out += modeName(m.game_mode);
+      out += ` ${durStr(m.duration)}\n`;
+    });
+    out += '\n';
+  }
+
+  if (d.peers?.length) {
+    out += '【常用队友】\n';
+    d.peers.slice(0, 8).forEach(p2 => {
+      out += `• ${p2.personaname}: ${p2.games}局 ${p2.winrate}%胜率\n`;
+    });
+    out += '\n';
+  }
+
+  out += '请根据以上数据生成玩家画像分析。';
+  return out;
+}
 
 app.get('/live/:matchId', async (req, res) => {
   const matchId = req.params.matchId;
@@ -455,6 +768,23 @@ const AI_PROVIDERS = {
 
 const prettyName = (n, pre) => (n && n !== 'empty' ? n.replace(pre, '').replace(/_/g, ' ') : null);
 
+// 英雄中文名称获取 (从 npc_dota_hero_xxx 名称)
+function heroZhFromNpc(npcName) {
+  if (!npcName) return null;
+  const id = Object.keys(heroesCache).find(k => {
+    // 从反查表中匹配 — 这里我们用更简单的方式: 遍历查找 name 匹配
+    return false;
+  });
+  return null;
+}
+
+// 物品中文名称获取 (从 item_xxx 名称)
+function itemZh(rawName) {
+  const zh = itemZhName(rawName);
+  if (zh) return zh;
+  return prettyName(rawName, /^item_/);
+}
+
 // Picks + bans per team from the GSI draft block (when present — populated in
 // ranked/draft modes during hero selection).
 function parseDraft(draft) {
@@ -486,10 +816,10 @@ function buildAIContext() {
   for (let i = 0; i < 9; i++) {
     const it = (s.items || {})[`slot${i}`];
     if (!it || !it.name || it.name === 'empty') continue;
-    const nm = prettyName(it.name, /^item_/);
+    const nm = itemZh(it.name);
     items.push(it.cooldown > 0 ? `${nm} (CD ${Math.ceil(it.cooldown)}秒)` : nm);
   }
-  const neutral = prettyName((s.items || {}).neutral0?.name, /^item_/);
+  const neutral = itemZh((s.items || {}).neutral0?.name);
   // Abilities with cooldown/ready + ultimate flag; talents pulled out separately.
   const abilities = [], talents = [];
   for (const k of Object.keys(s.abilities || {})) {
@@ -513,7 +843,7 @@ function buildAIContext() {
     const u = o && (o.unitname || o.name); // hero npc name lives in `unitname`
     if (!u || !String(u).startsWith('npc_dota_hero_')) continue;
     if (o.team !== myTeamNum && (o.team === 2 || o.team === 3)) {
-      const hn = prettyName(u, /^npc_dota_hero_/);
+      const hn = heroZhFromNpc(u) || prettyName(u, /^npc_dota_hero_/);
       if (!visibleEnemies.includes(hn)) visibleEnemies.push(hn);
     }
   }
@@ -524,7 +854,7 @@ function buildAIContext() {
   const isPick = /HERO_SELECTION|CUSTOM_GAME_SETUP/.test(gs); // 正在选人
   const isPregame = /STRATEGY_TIME|PRE_GAME/.test(gs);        // 英雄已选, 出门/购买
   const myTeam = p.team_name || (myTeamNum === 3 ? 'dire' : 'radiant');
-  const heroName_ = prettyName(h.name, /^npc_dota_hero_/);
+  const heroName_ = heroZhFromNpc(h.name) || prettyName(h.name, /^npc_dota_hero_/);
   const draftLine = (t.radiant.picks.length || t.dire.picks.length || t.radiant.bans.length || t.dire.bans.length)
     ? `选人 — 天辉: ${t.radiant.picks.join(', ') || '—'}; 夜魇: ${t.dire.picks.join(', ') || '—'}.`
       + ` 禁用 — 天辉: ${t.radiant.bans.join(', ') || '—'}; 夜魇: ${t.dire.bans.join(', ') || '—'}.`
@@ -742,7 +1072,7 @@ async function aiRespond(res, history, mode) {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`[FATAL] 端口 ${PORT} 被占用 — 可能已有另一个 Dota 2 Tracker ` +
+    console.error(`[FATAL] 端口 ${PORT} 被占用 — 可能已有另一个 大话游戏 | DOTA2助手 ` +
       `（或旧版本）在运行。请在托盘中关闭后重启。服务器未启动。`);
   } else {
     console.error('[FATAL] 服务器启动失败:', err.message);
@@ -753,7 +1083,7 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('╔═══════════════════════════════════════╗');
-  console.log('║  Dota 2 Tracker — GSI + OpenDota 服务器 ║');
+  console.log('║  大话游戏 | DOTA2助手 — GSI + OpenDota 服务器 ║');
   console.log(`║  http://localhost:${PORT}  (live via /ws) ║`);
   console.log('╚═══════════════════════════════════════╝');
   console.log('');
