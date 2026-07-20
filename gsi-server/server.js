@@ -661,7 +661,9 @@ function buildScoutPrompt(d) {
   if (d.rankings?.length) {
     out += '【英雄排名】\n';
     d.rankings.slice(0, 10).forEach(r => {
-      out += `• ${r.heroName}: ${r.score}分, 前 ${(r.percent_rank * 100).toFixed(1)}%\n`;
+      const topPct = (1 - r.percent_rank) * 100;
+      const pctText = r.percent_rank >= 1 ? '全球第1' : topPct < 0.1 ? '前0.1%' : `前${topPct.toFixed(1)}%`;
+      out += `• ${r.heroName}: ${r.score}分, ${pctText}\n`;
     });
     out += '\n';
   }
@@ -1010,7 +1012,7 @@ async function callProvider(provider, key, system, history) {
     const { data } = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`,
       { systemInstruction: { parts: [{ text: system }] }, contents,
-        generationConfig: { maxOutputTokens: 800, temperature: 0.6 } },
+        generationConfig: { maxOutputTokens: 2500, temperature: 0.6 } },
       { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
     return data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '—';
   }
@@ -1020,7 +1022,7 @@ async function callProvider(provider, key, system, history) {
     : 'https://api.openai.com/v1/chat/completions';
   const model = provider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini';
   const { data } = await axios.post(url, {
-    model, max_tokens: 800, temperature: 0.6,
+    model, max_tokens: 2500, temperature: 0.6,
     messages: [{ role: 'system', content: system }, ...history],
   }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, timeout: 30000 });
   return data.choices?.[0]?.message?.content?.trim() || '—';

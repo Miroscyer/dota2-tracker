@@ -428,12 +428,17 @@ function renderHeroesFull(heroes) {
 
 function renderRankings(rankings) {
   if (!Array.isArray(rankings) || !rankings.length) return '<div class="muted">暂无排名数据 (需要更多比赛场次)</div>';
-  return rankings.map(r => `
+  return rankings.map(r => {
+    const pct = r.percent_rank ?? 0;
+    const topPct = (1 - pct) * 100;
+    const pctText = pct >= 1 ? '全球第1' : topPct < 0.1 ? '前 0.1%' : `前 ${topPct.toFixed(1)}%`;
+    return `
     <div class="ranking-row">
       <div class="ranking-hero">${esc(r.heroName)}</div>
       <div class="ranking-rank">${r.score}分</div>
-      <div class="ranking-pct muted">前 ${(r.percent_rank * 100).toFixed(1)}%</div>
-    </div>`).join('');
+      <div class="ranking-pct muted">${pctText}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderWordCounts(words) {
